@@ -1,0 +1,9 @@
+[package]
+name = "blend_sdna"
+version = "0.1.0"
+authors = ["Lucas <lbittencs@gmail.com>"]
+
+[dependencies]
+byteorder = "1.2"
+regex = "0.2"
+lazy_static = "1.0"

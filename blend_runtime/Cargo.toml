@@ -1,0 +1,9 @@
+[package]
+name = "blend_runtime"
+version = "0.1.0"
+authors = ["Lucas <lbittencs@gmail.com>"]
+
+[dependencies]
+lazy_static = "1.0"
+regex = "0.2"
+blend_sdna = { path = "../blend_sdna" }
