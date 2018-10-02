@@ -34,7 +34,7 @@ pub struct FieldInstance<'a> {
 }
 
 pub struct Instance<'a> {
-    code: Option<[u8; 4]>,
+    pub code: Option<[u8; 4]>,
     addr: Option<u64>,
     blend: &'a sdna::Blend,
     type_template: &'a sdna::Type,
@@ -460,8 +460,14 @@ impl Blend {
     pub fn get_instances_by_code<'a>(&'a self, code: &'a [u8; 4]) -> Vec<Instance<'a>> {
         self.memory
             .iter()
-            .filter(|&(_, block)| &block.header.code == code)
-            .map(|(_, block)| self.block_to_instance(block, 0))
+            .filter(|&(_, block)| {
+                if &block.header.code == code {
+                    //println!("{}", String::from_utf8_lossy(&block.header.code));
+                    true
+                } else {
+                    false
+                }
+            }).map(|(_, block)| self.block_to_instance(block, 0))
             .collect()
     }
 
