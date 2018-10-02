@@ -14,13 +14,14 @@ lazy_static! {
     static ref FN_PTR_RE: regex::Regex = regex::Regex::new(r"\(\*([A-Za-z0-9]+)\)\((.*)\)").unwrap();
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum FieldFormat {
     Pointer,
     Value,
     FunctionPointer,
 }
 
+#[derive(Debug)]
 pub struct FieldInstance<'a> {
     name: &'a str,
     original_name: &'a str,
@@ -45,14 +46,16 @@ pub struct Instance<'a> {
 impl<'a> ::std::fmt::Display for Instance<'a> {
     fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         if let Some(addr) = self.addr {
-            writeln!(fmt, "{} @{} {{", self.type_template.name, addr)?;
+            write!(fmt, "{} @{}", self.type_template.name, addr)?;
         } else {
-            writeln!(fmt, "{} {{", self.type_template.name)?;
+            write!(fmt, "{}", self.type_template.name)?;
         }
 
         if let Some(code) = self.code {
-            writeln!(fmt, "Code: {}", String::from_utf8_lossy(&code));
+            write!(fmt, " | code: {}", String::from_utf8_lossy(&code));
         }
+
+        writeln!(fmt, "{{");
 
         let sorted_fields = {
             let mut sorted_fields = self.fields.iter().map(|v| *v.0).collect::<Vec<_>>();
@@ -244,6 +247,9 @@ impl<'a> Instance<'a> {
     }
     pub fn get_float<T: AsRef<str>>(&'a self, name: T) -> f32 {
         self.get_float_at(name, 0)
+    }
+    pub fn get_ptr<T: AsRef<str>>(&'a self, name: T) -> u64 {
+        self.get_ptr_at(name, 0)
     }
     pub fn get_ptr_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> u64 {
         self.fields
@@ -449,6 +455,14 @@ impl Blend {
             .next()
             .map(|(_, block)| self.block_to_instance(block, 0))
             .unwrap()
+    }
+
+    pub fn get_instances_by_code<'a>(&'a self, code: &'a [u8; 4]) -> Vec<Instance<'a>> {
+        self.memory
+            .iter()
+            .filter(|&(_, block)| &block.header.code == code)
+            .map(|(_, block)| self.block_to_instance(block, 0))
+            .collect()
     }
 
     pub fn get_instance_at<'a>(&'a self, address: u64, index: usize) -> Instance<'a> {
