@@ -212,6 +212,24 @@ impl<'a> Instance<'a> {
                     .unwrap()
             }).unwrap()
     }
+    pub fn get_i16_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> i16 {
+        self.fields
+            .get(name.as_ref())
+            .map(|ref f| {
+                if f.format != FieldFormat::Value {
+                    panic!("Called get_int_at on non-value field");
+                }
+                let data = self.get_at(f, index).unwrap();
+                assert!(data.len() == f.length / f.num_elements);
+                let mut c = ::std::io::Cursor::new(data);
+                sdna::read_i16(&mut c, self.blend.header.endianness)
+                    .ok()
+                    .unwrap()
+            }).unwrap()
+    }
+    pub fn get_i16<T: AsRef<str>>(&'a self, name: T) -> i16 {
+        self.get_i16_at(name, 0)
+    }
     pub fn get_int_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> i32 {
         self.fields
             .get(name.as_ref())
