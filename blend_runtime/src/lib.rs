@@ -124,7 +124,7 @@ impl<'a> ::std::fmt::Display for Instance<'a> {
                     }
                 } else {
                     if f.type_template.name == "ID" {
-                        write!(fmt, " = {}", self.get_instance(f.name));
+                        write!(fmt, " = {}", self.get_instance(f.name).get_string("name"));
                     }
                 }
             } else if f.format == FieldFormat::Pointer {
@@ -161,7 +161,7 @@ impl<'a> Instance<'a> {
                         &self.blend.header,
                         struct_template,
                     ),
-                    data: &self.data[field.offset..field.length],
+                    data: &self.data[field.offset..field.offset + field.length],
                 }
             }).unwrap()
     }
