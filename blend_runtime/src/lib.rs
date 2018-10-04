@@ -123,9 +123,24 @@ impl<'a> ::std::fmt::Display for Instance<'a> {
                         fmt.debug_list().entries(els.iter()).finish()?;
                     }
                 } else {
-                    if f.type_template.name == "ID" {
-                        write!(fmt, " = {}", self.get_instance(f.name).get_string("name"));
+                    if let Some(inst) = self.try_get_instance(f.name) {
+                        let as_str = format!("{}", inst);
+
+                        write!(
+                            fmt,
+                            "{}",
+                            (&as_str[..])
+                                .lines()
+                                .map(|l| format!("\t{}", l))
+                                .collect::<String>()
+                        )?;
+                    } else {
+                        write!(fmt, "NULL");
                     }
+
+                    /*if f.type_template.name == "ID" {
+                        write!(fmt, " = {}", self.get_instance(f.name).get_string("name"));
+                    }*/
                 }
             } else if f.format == FieldFormat::Pointer {
                 write!(fmt, " = @{:?}", self.get_ptr_at(f.name, 0))?;
@@ -144,13 +159,13 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_instance<T: AsRef<str>>(&'a self, field_name: T) -> Instance<'a> {
-        self.fields
-            .get(field_name.as_ref())
-            .map(|field| {
-                let struct_template = field
-                    .struct_template
-                    .expect("called get_instance on non-instance field");
-                Instance {
+        self.try_get_instance(field_name).unwrap()
+    }
+
+    pub fn try_get_instance<T: AsRef<str>>(&'a self, field_name: T) -> Option<Instance<'a>> {
+        self.fields.get(field_name.as_ref()).and_then(|field| {
+            if let Some(struct_template) = field.struct_template {
+                Some(Instance {
                     code: None,
                     addr: None,
                     blend: &self.blend,
@@ -162,8 +177,11 @@ impl<'a> Instance<'a> {
                         struct_template,
                     ),
                     data: &self.data[field.offset..field.offset + field.length],
-                }
-            }).unwrap()
+                })
+            } else {
+                None
+            }
+        })
     }
 
     fn get_at(&'a self, field: &'a FieldInstance, index: usize) -> Option<&'a [u8]> {
@@ -344,8 +362,6 @@ pub struct Blend {
 impl ::std::fmt::Display for Blend {
     fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         for (addr, _) in &self.memory {
-            println!("addr: {}", addr);
-
             if let Some(x) = self.try_get_instance(*addr) {
                 writeln!(fmt, "{}", x)?;
             } else {

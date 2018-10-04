@@ -1,0 +1,9 @@
+[package]
+name = "blend_runtime"
+version = "0.1.0"
+authors = ["lucas_souza <lucas_souza@tpn.usp.br>"]
+
+[dependencies]
+
+[dependencies.blend_sdna]
+path="../leaf/blend_sdna"
