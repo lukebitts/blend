@@ -1,543 +1,434 @@
+extern crate blend_parse;
 extern crate blend_sdna;
+extern crate fancy_regex;
 #[macro_use]
 extern crate lazy_static;
-extern crate regex;
+extern crate byteorder;
+extern crate num;
+#[macro_use]
+extern crate derivative;
 
-use blend_sdna::sdna;
+use blend_parse::{Blend as ParsedBlend, Block, Endianness, PointerSize};
+use blend_sdna::Dna;
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
+use fancy_regex::Regex;
+use num::FromPrimitive;
 use std::collections::HashMap;
+use std::io::Cursor;
 
 lazy_static! {
-    //static ref POINTER_RE: regex::Regex = regex::Regex::new(r"\*([A-Za-z0-9]+)").unwrap();
-    static ref POINTER_RE: regex::Regex = regex::Regex::new(r"([\*]+)([A-Za-z0-9]+)").unwrap();
-    static ref POINTER_ARRAY_RE: regex::Regex = regex::Regex::new(r"\*([A-Za-z0-9]+)\[([0-9]+)\]").unwrap();
-    static ref ARRAY_RE: regex::Regex = regex::Regex::new(r"([A-Za-z0-9]+)\[([0-9]+)\]").unwrap();
-    static ref FN_PTR_RE: regex::Regex = regex::Regex::new(r"\(\*([A-Za-z0-9]+)\)\((.*)\)").unwrap();
-}
+    static ref BLEND_VARIABLE: Regex =
+        //Regex::new(r"([\(]*)([\*]*)([a-zA-Z0-9_]*)(?:(?:\))|\[*([0-9]*)\]*)").unwrap();
+        Regex::new(r"([\(]*)([\*]*)([a-zA-Z0-9_]*)(?:(?:\))|\[*([0-9]*)\]*(?:\[([0-9]*)\])*)").unwrap();
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum FieldFormat {
-    Pointer,
-    Value,
-    FunctionPointer,
 }
 
 #[derive(Debug)]
+pub struct FieldTemplate {
+    field_type_index: usize,
+    field_name_index: usize,
+}
+
+#[derive(Debug)]
+pub struct StructTemplate {
+    struct_type_index: usize,
+    struct_fields: Vec<FieldTemplate>,
+}
+
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct FieldInstance<'a> {
+    #[derivative(Debug = "ignore")]
+    blend: &'a Blend,
+    field_type: &'a (String, u16),
+    field_type_index: usize,
+    field_name: &'a String,
+    indirection_count: u8,
     name: &'a str,
-    original_name: &'a str,
-    type_template: &'a sdna::Type,
-    struct_template: Option<&'a sdna::StructureTemplate>,
-    offset: usize,
-    length: usize,
-    format: FieldFormat,
-    num_elements: usize,
-}
-
-pub struct Instance<'a> {
-    pub code: Option<[u8; 4]>,
-    addr: Option<u64>,
-    blend: &'a sdna::Blend,
-    type_template: &'a sdna::Type,
-    struct_template: &'a sdna::StructureTemplate,
-    fields: HashMap<&'a str, FieldInstance<'a>>,
+    #[derivative(Debug = "ignore")]
     data: &'a [u8],
+    count: usize,
+    /*data_start: usize,
+    data_len: usize,*/
 }
 
-impl<'a> ::std::fmt::Display for Instance<'a> {
-    fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        if let Some(addr) = self.addr {
-            write!(fmt, "{} @{}", self.type_template.name, addr)?;
-        } else {
-            write!(fmt, "{}", self.type_template.name)?;
-        }
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct StructInstance<'a> {
+    //struct_template: &'a StructTemplate,
+    #[derivative(Debug = "ignore")]
+    blend: &'a ParsedBlend,
+    endianness: Endianness,
+    pointer_size: PointerSize,
+    pub code: [u8; 4],
+    struct_type: &'a (String, u16),
+    fields: HashMap<&'a str, FieldInstance<'a>>, //Vec<FieldInstance<'a>>
+}
 
-        if let Some(code) = self.code {
-            write!(fmt, " | code: {}", String::from_utf8_lossy(&code));
-        }
-
-        writeln!(fmt, "{{");
-
-        let sorted_fields = {
-            let mut sorted_fields = self.fields.iter().map(|v| *v.0).collect::<Vec<_>>();
-            sorted_fields.sort();
-            sorted_fields
-        };
-
-        for fname in sorted_fields.iter() {
-            let f = &self.fields[fname];
-            let pointer = if f.format == FieldFormat::Pointer {
-                "*"
-            } else {
-                ""
-            };
-            let array = if f.num_elements > 1 {
-                format!("[{}]", f.num_elements)
-            } else {
-                "".to_string()
-            };
-
-            write!(
-                fmt,
-                "\t{}{}{} {} ({})",
-                pointer, f.type_template.name, array, f.name, f.original_name
-            )?;
-
-            if f.format == FieldFormat::Value {
-                if f.type_template.name == "char" {
-                    if f.num_elements > 1 {
-                        write!(fmt, " = \"{}\"", self.get_string(f.name))?;
-                    } else {
-                        write!(fmt, " = \"{}\"", self.get_char(f.name))?;
-                    }
-                } else if f.type_template.name == "float" {
-                    if f.num_elements == 1 {
-                        write!(fmt, " = {}f", self.get_float(f.name))?;
-                    } else {
-                        write!(fmt, " = ")?;
-                        let mut els = Vec::new();
-                        for el in 0..f.num_elements {
-                            els.push(self.get_float_at(f.name, el));
-                        }
-                        fmt.debug_list().entries(els.iter()).finish()?;
-                    }
-                } else if f.type_template.name == "int" {
-                    if f.num_elements == 1 {
-                        write!(fmt, " = {}", self.get_int(f.name))?;
-                    } else {
-                        write!(fmt, " = ")?;
-                        let mut els = Vec::new();
-                        for el in 0..f.num_elements {
-                            els.push(self.get_int_at(f.name, el));
-                        }
-                        fmt.debug_list().entries(els.iter()).finish()?;
-                    }
-                } else if f.type_template.name == "short" {
-                    if f.num_elements == 1 {
-                        write!(fmt, " = {}", self.get_short_at(f.name, 0))?;
-                    } else {
-                        write!(fmt, " = ")?;
-                        let mut els = Vec::new();
-                        for el in 0..f.num_elements {
-                            els.push(self.get_short_at(f.name, el));
-                        }
-                        fmt.debug_list().entries(els.iter()).finish()?;
-                    }
-                } else {
-                    if let Some(inst) = self.try_get_instance(f.name) {
-                        let as_str = format!("{}", inst);
-
-                        write!(
-                            fmt,
-                            "{}",
-                            (&as_str[..])
-                                .lines()
-                                .map(|l| format!("\t{}", l))
-                                .collect::<String>()
-                        )?;
-                    } else {
-                        write!(fmt, "NULL");
-                    }
-
-                    /*if f.type_template.name == "ID" {
-                        write!(fmt, " = {}", self.get_instance(f.name).get_string("name"));
-                    }*/
-                }
-            } else if f.format == FieldFormat::Pointer {
-                write!(fmt, " = @{:?}", self.get_ptr_at(f.name, 0))?;
-            }
-
-            writeln!(fmt, ";")?;
-        }
-
-        writeln!(fmt, "}}")
+pub fn parse_f32(slice: &[u8], endianness: Endianness) -> f32 {
+    let mut rdr = Cursor::new(slice);
+    match endianness {
+        Endianness::LittleEndian => rdr.read_f32::<LittleEndian>().unwrap(),
+        Endianness::BigEndian => rdr.read_f32::<BigEndian>().unwrap(),
     }
 }
 
-impl<'a> Instance<'a> {
-    pub fn type_is(&'a self, type_name: &'a str) -> bool {
-        self.type_template.name == type_name
+pub fn parse_u32(slice: &[u8], endianness: Endianness) -> u32 {
+    let mut rdr = Cursor::new(slice);
+    match endianness {
+        Endianness::LittleEndian => rdr.read_u32::<LittleEndian>().unwrap(),
+        Endianness::BigEndian => rdr.read_u32::<BigEndian>().unwrap(),
     }
+}
 
-    pub fn get_instance<T: AsRef<str>>(&'a self, field_name: T) -> Instance<'a> {
-        self.try_get_instance(field_name).unwrap()
+pub fn parse_u64(slice: &[u8], endianness: Endianness) -> u64 {
+    let mut rdr = Cursor::new(slice);
+    match endianness {
+        Endianness::LittleEndian => rdr.read_u64::<LittleEndian>().unwrap(),
+        Endianness::BigEndian => rdr.read_u64::<BigEndian>().unwrap(),
     }
+}
 
-    pub fn try_get_instance<T: AsRef<str>>(&'a self, field_name: T) -> Option<Instance<'a>> {
-        self.fields.get(field_name.as_ref()).and_then(|field| {
-            if let Some(struct_template) = field.struct_template {
-                Some(Instance {
-                    code: None,
-                    addr: None,
-                    blend: &self.blend,
-                    type_template: field.type_template,
-                    struct_template: struct_template,
-                    fields: Blend::create_fields(
-                        &self.blend.dna,
-                        &self.blend.header,
-                        struct_template,
-                    ),
-                    data: &self.data[field.offset..field.offset + field.length],
-                })
-            } else {
-                None
-            }
-        })
+impl<'a> StructInstance<'a> {
+    pub fn get_instance<T: AsRef<str>>(&'a self, field_name: T) -> StructInstance<'a> {
+        unimplemented!()
     }
 
     fn get_at(&'a self, field: &'a FieldInstance, index: usize) -> Option<&'a [u8]> {
-        let size = field.length / field.num_elements;
-        let min = field.offset + size * index;
-        let max = field.offset + size + size * index;
-
-        if min < self.data.len() && max <= self.data.len() {
-            Some(&self.data[min..max])
-        } else {
-            //print!("[ERR] get_at ({} {})", field.type_template.name, field.name);
-            //eprintln!("[ERR] get_at ({} {})", field.type_template.name, field.name);
-            None
-        }
+        unimplemented!()
     }
 
     pub fn get_char<T: AsRef<str>>(&'a self, name: T) -> u8 {
-        self.fields
-            .get(name.as_ref())
-            .map(|ref f| {
-                if f.format != FieldFormat::Value {
-                    panic!("Called get_char on non-value field");
-                }
-                let data = self.get_at(f, 0).unwrap();
-                assert!(data.len() == f.length / f.num_elements);
-                let mut c = ::std::io::Cursor::new(data);
-                //sdna::read_i32(&mut c, self.blend.header.endianness).ok()
-                sdna::read_exact(&mut c, 1)
-                    .ok()
-                    .and_then(|v| v.iter().cloned().next())
-                    .unwrap()
-            }).unwrap()
+        unimplemented!()
     }
-    pub fn get_short_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> i16 {
-        self.fields
-            .get(name.as_ref())
-            .map(|ref f| {
-                if f.format != FieldFormat::Value {
-                    panic!("Called get_short_at on non-value field");
-                }
-                let data = self.get_at(f, index).unwrap();
-                assert!(data.len() == f.length / f.num_elements);
-                let mut c = ::std::io::Cursor::new(data);
-                sdna::read_i16(&mut c, self.blend.header.endianness)
-                    .ok()
-                    .unwrap()
-            }).unwrap()
-    }
+
     pub fn get_i16_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> i16 {
-        self.fields
-            .get(name.as_ref())
-            .map(|ref f| {
-                if f.format != FieldFormat::Value {
-                    panic!("Called get_int_at on non-value field");
-                }
-                let data = self.get_at(f, index).unwrap();
-                assert!(data.len() == f.length / f.num_elements);
-                let mut c = ::std::io::Cursor::new(data);
-                sdna::read_i16(&mut c, self.blend.header.endianness)
-                    .ok()
-                    .unwrap()
-            }).unwrap()
+        unimplemented!()
     }
+
     pub fn get_i16<T: AsRef<str>>(&'a self, name: T) -> i16 {
         self.get_i16_at(name, 0)
     }
-    pub fn get_int_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> i32 {
-        self.fields
-            .get(name.as_ref())
-            .map(|ref f| {
-                if f.format != FieldFormat::Value {
-                    panic!("Called get_int_at on non-value field");
-                }
-                let data = self.get_at(f, index).unwrap();
-                assert!(data.len() == f.length / f.num_elements);
-                let mut c = ::std::io::Cursor::new(data);
-                sdna::read_i32(&mut c, self.blend.header.endianness)
-                    .ok()
-                    .unwrap()
-            }).unwrap()
-    }
-    pub fn get_int<T: AsRef<str>>(&'a self, name: T) -> i32 {
-        self.get_int_at(name, 0)
-    }
-    pub fn get_float_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> f32 {
-        self.fields
-            .get(name.as_ref())
-            .map(|ref f| {
-                if f.format != FieldFormat::Value {
-                    panic!("Called get_float on non-value field");
-                }
-                let data = self.get_at(f, index).unwrap();
-                assert!(data.len() == f.length / f.num_elements);
-                let mut c = ::std::io::Cursor::new(data);
-                sdna::read_f32(&mut c, self.blend.header.endianness)
-                    .ok()
-                    .unwrap()
-            }).unwrap()
-    }
-    pub fn get_float<T: AsRef<str>>(&'a self, name: T) -> f32 {
-        self.get_float_at(name, 0)
-    }
-    pub fn get_ptr<T: AsRef<str>>(&'a self, name: T) -> u64 {
-        self.get_ptr_at(name, 0)
-    }
-    pub fn get_ptr_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> u64 {
-        self.fields
-            .get(name.as_ref())
-            .map(|ref f| {
-                if f.format != FieldFormat::Pointer {
-                    panic!("Called get_ptr on non-pointer field");
-                }
-                if let Some(data) = self.get_at(f, index) {
-                    if data.len() != f.length / f.num_elements {
-                        return Some(0);
-                    }
 
-                    /*if(f.type_template.name == "Link") {
-                        let next_ptr = self.get_ptr_at("next", 0);
-                        let prev_ptr = self.get_ptr_at("prev", 0);
+    pub fn get_i32_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> i32 {
+        unimplemented!()
+    }
 
-                        if next_ptr != 0 {
-                            return Some(next_ptr);
-                        }
-                        else {
-                            return Some(prev_ptr);
-                        }
-                    }*/
+    pub fn get_i32<T: AsRef<str>>(&'a self, name: T) -> i32 {
+        self.get_i32_at(name, 0)
+    }
 
-                    //assert!();
-                    let mut c = ::std::io::Cursor::new(data);
-                    sdna::read_ptr(
-                        &mut c,
-                        self.blend.header.endianness,
-                        self.blend.header.pointer_size,
-                    ).ok()
-                } else {
-                    Some(0)
-                }
-            }).unwrap()
+    pub fn get_f32_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> f32 {
+        let field = self.fields.get(name.as_ref()).unwrap();
+        let size = std::mem::size_of::<f32>();
+        assert_eq!(field.data.len(), size * field.count);
+        parse_f32(
+            &field.data[index * size..index * size + size],
+            self.endianness,
+        )
+    }
+
+    pub fn get_f32<T: AsRef<str>>(&'a self, name: T) -> f32 {
+        self.get_f32_at(name, 0)
+    }
+
+    pub fn get_ptr_instance_count<T: AsRef<str>>(&'a self, name: T) -> usize {
+        let ptr: u64 = self.get_ptr(name);
+
+        self.blend
+            .blocks
+            .iter()
+            .filter(|b| b.header.old_memory_address == ptr)
+            .next()
+            .map(|b| b.header.count as usize)
             .unwrap()
     }
-    pub fn get_string<T: AsRef<str>>(&'a self, name: T) -> String {
-        self.fields
-            .get(name.as_ref())
-            .map(|ref f| {
-                if f.format != FieldFormat::Value {
-                    panic!("Called get_string on non-value field");
-                }
 
-                if f.length as usize / f.num_elements != 1 {
-                    panic!(
-                        "Called get_string on field with incompatible type ({} {})",
-                        f.type_template.name,
-                        name.as_ref()
-                    );
-                }
+    pub fn get_ptr<T: AsRef<str>>(&'a self, name: T) -> u64 {
+        let field = self.fields.get(name.as_ref()).unwrap();
+        let size = self.pointer_size.bytes_num();
 
-                let mut final_offset = f.offset as usize + f.length as usize;
+        assert_eq!(field.data.len(), size);
 
-                for i in f.offset as usize..final_offset {
-                    if &self.data[i] == &('\0' as u8) {
-                        final_offset = i;
-                        break;
-                    }
-                }
-
-                String::from_utf8_lossy(&self.data[f.offset as usize..final_offset]).into()
-            }).unwrap()
-    }
-}
-
-pub struct Blend {
-    memory: HashMap<u64, sdna::Block>,
-    blend: sdna::Blend,
-}
-
-impl ::std::fmt::Display for Blend {
-    fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        for (addr, _) in &self.memory {
-            if let Some(x) = self.try_get_instance(*addr) {
-                writeln!(fmt, "{}", x)?;
-            } else {
-                writeln!(fmt, "[NULL]")?;
-            }
+        match self.pointer_size {
+            PointerSize::Bits32 => parse_u32(field.data, self.endianness) as u64,
+            PointerSize::Bits64 => parse_u64(field.data, self.endianness),
         }
-        Ok(())
     }
+
+    /*pub fn get_ptr_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> u64 {
+        unimplemented!()
+    }*/
+
+    pub fn deref_instance<T: AsRef<str>>(&'a self, name: T) -> StructInstance<'a> {
+        self.deref_instance_at(name, 0)
+    }
+
+    pub fn deref_instance_at<T: AsRef<str>>(&'a self, name: T, index: usize) -> StructInstance<'a> {
+        let mut ptr = self.get_ptr(name.as_ref());
+        let field = self.fields.get(name.as_ref()).unwrap();
+
+        println!("ptr {}", ptr);
+
+        let mut block = self
+            .blend
+            .blocks
+            .iter()
+            .filter(|b| b.header.old_memory_address == ptr)
+            .next()
+            .unwrap();
+        println!("{:?}", field);
+        println!("{:?} {:?}", block, block.data);
+
+        for _ in 1..field.indirection_count {
+            println!(">>>");
+            let next_ptr = match self.pointer_size {
+                PointerSize::Bits32 => parse_u32(&block.data, self.endianness) as u64,
+                PointerSize::Bits64 => parse_u64(&block.data, self.endianness),
+            };
+
+            println!("next {}", next_ptr);
+
+            block = self
+                .blend
+                .blocks
+                .iter()
+                .filter(|b| b.header.old_memory_address == next_ptr)
+                .next()
+                .unwrap();
+        }
+
+        println!(
+            "ends 00 {}",
+            block.header.code[2] == 0 && block.header.code[3] == 0
+        );
+
+        if field.field_type.1 == 0 {
+            let instance = field
+                .blend
+                .block_to_struct(&block, block.header.sdna_index as usize);
+
+            println!("{:?}", instance.struct_type);
+
+            instance
+        } else {
+            //println!("{:?}", field.blend.dna);
+
+            let (i, struct_template) = field
+                .blend
+                .struct_templates
+                .iter()
+                .enumerate()
+                .filter(|s| {
+                    if s.1.struct_type_index == field.field_type_index {
+                        println!("\t{}", s.0 as usize);
+                        return true;
+                    }
+                    false
+                })
+                .next()
+                .unwrap();
+
+            /*println!(
+                ">? {} {:?}",
+                i,
+                field.blend.dna.types[field.blend.struct_templates[i].struct_type_index] //i, field.blend.dna.types[field.field_type_index]
+            );*/
+
+            field.blend.block_to_struct(&block, i)
+        }
+    }
+
+    pub fn get_string<T: AsRef<str>>(&'a self, name: T) -> String {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug)]
+pub struct Blend {
+    blend: ParsedBlend,
+    dna: Dna,
+    struct_templates: Vec<StructTemplate>,
+    //memory: HashMap<u64, Block>,
 }
 
 impl Blend {
-    pub fn new<R: ::std::io::Read>(buf: &mut R) -> ::std::io::Result<Blend> {
-        let mut blend = sdna::parse_blend_file(buf)?;
+    pub fn new(data: &[u8]) -> Blend {
+        let blend = ParsedBlend::new(data).unwrap();
 
-        let mut blocks = ::std::mem::replace(&mut blend.blocks, Vec::new());
-        let k = blocks.drain(..);
-        let j = k
-            .map(|b| (b.header.old_memory_address, b))
-            .collect::<HashMap<_, _>>();
+        let dna = {
+            let dna_block = &blend.blocks[blend.blocks.len() - 1];
+            Dna::from_sdna_block(
+                dna_block,
+                blend.header.endianness,
+                blend.header.pointer_size,
+            )
+            .unwrap()
+        };
 
-        Ok(Blend {
-            memory: j,
-            blend: blend,
-        })
-    }
+        let mut struct_templates: Vec<StructTemplate> = Vec::new();
 
-    fn create_fields<'a>(
-        dna: &'a sdna::Dna,
-        header: &'a sdna::Header,
-        struct_template: &'a sdna::StructureTemplate,
-    ) -> HashMap<&'a str, FieldInstance<'a>> {
-        let mut fields = HashMap::new();
-        let mut field_offset = 0;
-        for field_template in &struct_template.fields {
-            let mut field_name = dna.names[field_template.name_index].as_ref();
-            let field_type_template = &dna.types[field_template.type_index];
-            let mut num_elements = 1;
-            let mut field_length = field_type_template.length as usize;
-            let struct_template = dna
-                .structures
-                .iter()
-                .filter(|s| s.type_index == field_template.type_index)
-                .next();
-            let mut field_format = FieldFormat::Value;
+        for structure in &dna.structs {
+            let mut struct_fields = Vec::new();
 
-            if let Some(array_data) = POINTER_ARRAY_RE.captures_iter(&field_name).next() {
-                field_name = &field_name[1..array_data[1].len() + 1];
-                num_elements = (&array_data[2]).parse::<usize>().unwrap();
-                field_length = header.pointer_size.length_in_bytes() as usize * num_elements;
-                field_format = FieldFormat::Pointer;
-            } else if let Some(array_data) = ARRAY_RE.captures_iter(&field_name).next() {
-                field_name = &field_name[0..array_data[1].len()];
-                num_elements = (&array_data[2]).parse::<usize>().unwrap();
-                field_length *= num_elements;
-            } else if let Some(pointer_name) = POINTER_RE.captures_iter(&field_name).next() {
-                //if field_name == "**mat" {
-                //    println!("{:?}", pointer_name);
-                //    panic!()
-                //}
-                let x = pointer_name[1].len();
-                let y = x + pointer_name[2].len();
-
-                if x > 1 {
-                    //println!(">>> {}", field_name);
-                }
-
-                field_name = &field_name[x..y];
-                field_length = header.pointer_size.length_in_bytes() as usize;
-                field_format = FieldFormat::Pointer;
-            } else if let Some(_fn_ptr_data) = FN_PTR_RE.captures_iter(&field_name).next() {
-                panic!("fn ptr")
+            for field in &structure.1 {
+                struct_fields.push(FieldTemplate {
+                    field_type_index: /*types[*/ field.0 as usize,
+                    field_name_index: /*names[*/ field.1 as usize,
+                })
             }
 
-            fields.insert(
-                field_name,
-                FieldInstance {
-                    name: field_name,
-                    original_name: dna.names[field_template.name_index].as_ref(),
-                    type_template: field_type_template,
-                    struct_template: struct_template,
-                    offset: field_offset,
-                    length: field_length,
-                    format: field_format,
-                    num_elements: num_elements,
-                },
-            );
-            field_offset += field_length;
+            struct_templates.push(StructTemplate {
+                struct_type_index: /*types[*/ structure.0 as usize,
+                struct_fields,
+            });
         }
 
-        fields
+        Blend {
+            blend,
+            dna,
+            struct_templates,
+        }
     }
 
-    pub fn get_instance_count(&self, address: u64) -> u32 {
-        self.memory
-            .get(&address)
-            .map(|block| block.header.count)
-            .unwrap()
-    }
-
-    pub fn get_instance<'a>(&'a self, address: u64) -> Instance<'a> {
-        self.get_instance_at(address, 0)
-    }
-
-    pub fn try_get_instance<'a>(&'a self, address: u64) -> Option<Instance<'a>> {
-        self.memory.get(&address).and_then(|block| {
-            let instance = self.block_to_instance(block, 0);
-            if instance.type_template.name == "Link" {
-                let next = instance.get_ptr_at("next", 0);
-                let prev = instance.get_ptr_at("prev", 0);
-
-                if next != 0 {
-                    return self.try_get_instance(next);
-                } else if prev != 0 {
-                    return self.try_get_instance(prev);
-                }
-            }
-            Some(instance)
-        })
-    }
-
-    pub fn get_instance_by_code<'a>(&'a self, code: &'a [u8; 4]) -> Instance<'a> {
-        self.memory
+    fn test_all(&self) -> impl Iterator<Item = StructInstance> {
+        self.blend
+            .blocks
             .iter()
-            .filter(|&(_, block)| &block.header.code == code)
-            .next()
-            .map(|(_, block)| self.block_to_instance(block, 0))
-            .unwrap()
+            .filter(|b| b.header.code == [b.header.code[0], b.header.code[1], 0, 0])
+            .map(|b| self.block_to_struct(b, b.header.sdna_index as usize))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
-    pub fn get_instances_by_code<'a>(&'a self, code: &'a [u8; 4]) -> Vec<Instance<'a>> {
-        self.memory
+    pub fn get_by_code(&self, code: [u8; 2]) -> impl Iterator<Item = StructInstance> {
+        self.blend
+            .blocks
             .iter()
-            .filter(|&(_, block)| {
-                if &block.header.code == code {
-                    //println!("{}", String::from_utf8_lossy(&block.header.code));
-                    true
+            .filter(|b| b.header.code == [code[0], code[1], 0, 0])
+            .map(|b| self.block_to_struct(b, b.header.sdna_index as usize))
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    pub fn block_to_struct<'a>(
+        &'a self,
+        block: &'a Block,
+        struct_template_index: usize,
+    ) -> StructInstance<'a> {
+        let struct_template = &self.struct_templates[struct_template_index];
+        let struct_type = &self.dna.types[struct_template.struct_type_index];
+
+        let mut struct_fields = Vec::new();
+        let mut data_start = 0usize;
+
+        for field in &struct_template.struct_fields {
+            let field_type = &self.dna.types[field.field_type_index];
+            let field_name = &self.dna.names[field.field_name_index];
+
+            let mut data_len;
+            let mut variable_name = "";
+            let mut count = 1;
+            let mut indirection_count = 0;
+
+            if let Ok(Some(data)) = BLEND_VARIABLE.captures(&field_name) {
+                let is_fn_ptr = if let Some(parens) = data.at(1) {
+                    parens == "(("
                 } else {
                     false
-                }
-            }).map(|(_, block)| self.block_to_instance(block, 0))
-            .collect()
-    }
+                };
 
-    pub fn get_instance_at<'a>(&'a self, address: u64, index: usize) -> Instance<'a> {
-        self.memory
-            .get(&address)
-            .map(|block| {
-                let instance = self.block_to_instance(block, index);
-                if instance.type_template.name == "Link" {
-                    let next = instance.get_ptr_at("next", 0);
-                    let prev = instance.get_ptr_at("prev", 0);
+                if !is_fn_ptr {
+                    let asterisks = data.at(2).unwrap();
+                    variable_name = data.at(3).expect("no variable name");
+                    let array_count: u16 = data.at(4).map(|c| c.parse().unwrap_or(1)).unwrap_or(1);
+                    let array_count2: u16 = data.at(5).map(|c| c.parse().unwrap_or(1)).unwrap_or(1);
 
-                    if next != 0 {
-                        return self.get_instance(next);
-                    } else if prev != 0 {
-                        return self.get_instance(prev);
+                    if asterisks.len() <= 255 {
+                        indirection_count = asterisks.len() as u8;
+                    } else {
+                        panic!("number of indirections too high");
                     }
+
+                    if asterisks.len() > 0 {
+                        data_len = self.blend.header.pointer_size.bytes_num()
+                    } else {
+                        count = array_count as usize * array_count2 as usize;
+                        data_len =
+                            field_type.1 as usize * array_count as usize * array_count2 as usize;
+                    }
+                } else {
+                    println!("{} | FN_PTR", field_name);
+                    data_len = self.blend.header.pointer_size.bytes_num()
                 }
-                instance
-            }).unwrap()
-    }
+            } else {
+                panic!("unexpected field name: {}", field_name);
+            }
 
-    fn block_to_instance<'a>(&'a self, block: &'a sdna::Block, index: usize) -> Instance<'a> {
-        let struct_template = &self.blend.dna.structures[block.header.sdna_index];
-        let type_template = &self.blend.dna.types[struct_template.type_index];
+            struct_fields.push(FieldInstance {
+                blend: &self,
+                field_type,
+                field_type_index: field.field_type_index,
+                field_name,
+                indirection_count,
+                count,
+                name: variable_name,
+                data: &block.data[data_start..data_start + data_len],
+            });
+            data_start += data_len;
+        }
 
-        let initial_index = index * type_template.length as usize;
+        if data_start != struct_type.1 as usize {
+            println!(
+                "{} (size {} {}) (code {})",
+                struct_type.0,
+                struct_type.1,
+                data_start,
+                String::from_utf8_lossy(&block.header.code)
+            )
+        }
 
-        Instance {
-            code: Some(block.header.code),
-            addr: Some(block.header.old_memory_address),
+        StructInstance {
             blend: &self.blend,
-            type_template: type_template,
-            struct_template: struct_template,
-            data: &block.data[initial_index..],
-            fields: Blend::create_fields(&self.blend.dna, &self.blend.header, &struct_template),
+            struct_type: &self.dna.types[struct_template.struct_type_index],
+            fields: struct_fields.into_iter().map(|f| (f.name, f)).collect(),
+            endianness: self.blend.header.endianness,
+            pointer_size: self.blend.header.pointer_size,
+            code: block.header.code,
+        }
+    }
+}
+
+pub fn main() {
+    use std::fs::File;
+    use std::io::Read;
+
+    let mut file = File::open("/home/lucas/projects/leaf/assets/simple.blend").unwrap();
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
+
+    let blend = Blend::new(&buffer[..]);
+
+    for ob in blend.get_by_code([b'O', b'B']) {
+        if ob.get_ptr("mat") != 0 {
+            println!("{} ({})", ob.struct_type.0, ob.struct_type.1);
+
+            for (_, f) in &ob.fields {
+                if f.field_name == "**mat" {
+                    println!("\t{} {} ({})", f.field_type.0, f.field_name, f.data.len());
+                }
+            }
+
+            println!(
+                "float: {} {} {}",
+                ob.get_f32_at("loc", 0),
+                ob.get_f32_at("loc", 1),
+                ob.get_f32_at("loc", 2)
+            );
+
+            ob.deref_instance("data");
+
+            ob.deref_instance("mat");
         }
     }
 }

@@ -1,8 +1,7 @@
 [package]
-name = "blend_sdna"
+name = "blend_parse"
 version = "0.1.0"
 authors = ["lucas_souza"]
 
 [dependencies]
-blend_parse = { path="../blend_parse" }
 nom = "4.1"
