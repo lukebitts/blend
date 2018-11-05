@@ -1,2 +1,2 @@
 [workspace]
-members = ["clever", "common", "client", "server", "blend_parse", "blend_sdna", "blend_runtime"]
+members = ["clever", "common", "client", "server", "blend_parse", "blend_sdna", "blend_runtime", "blend"]
