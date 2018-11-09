@@ -10,9 +10,8 @@ path="src/lib.rs"
 [dependencies]
 blend_parse = { path="../blend_parse" }
 blend_sdna = { path="../blend_sdna" }
-lazy_static = "1.0"
-fancy-regex = "0.1"
 num = "0.2.0"
 byteorder = "1.2"
 derivative = "1.0.1"
 nom = "4.1"
+linked-hash-map = "0.5.1"
