@@ -27,7 +27,8 @@ use std::fs::File;
 use std::io::Read;
 use std::rc::Rc;
 use struct_parser::{
-    block_to_struct, FieldInstance, FieldTemplate, PointerInfo, StructData, StructInstance, BlendPrimitive
+    block_to_struct, BlendPrimitive, FieldInstance, FieldTemplate, PointerInfo, StructData,
+    StructInstance,
 };
 
 pub struct Blend {
@@ -42,7 +43,7 @@ pub struct Blend {
 pub struct Instance<'a> {
     #[derivative(Debug = "ignore")]
     blend: &'a Blend,
-    instance: Rc<StructInstance>,
+    pub instance: Rc<StructInstance>,
 }
 
 impl<'a> Instance<'a> {
@@ -50,15 +51,157 @@ impl<'a> Instance<'a> {
         self.instance.code.unwrap()
     }
 
-    pub fn get_instances<T: AsRef<str>>(&self, name: T) -> Vec<Instance<'a>> {
+    pub fn get_i32<T: AsRef<str>>(&self, name: T) -> i32 {
+        //println!("{:?}", self.instance.type_name);
+        //println!("<!> {}", name.as_ref());
+        match &self.instance.data {
+            StructData::Single(instance) => {
+                let field = &instance.fields[name.as_ref()];
+
+                //println!("\t<!> {:?}", field);
+
+                match field {
+                    FieldInstance::Value(BlendPrimitive::Int(v)) => *v,
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    pub fn get_f32<T: AsRef<str>>(&self, name: T) -> f32 {
         match &self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
 
                 match field {
-                    FieldInstance::Value(BlendPrimitive::)
+                    FieldInstance::Value(BlendPrimitive::Float(v)) => *v,
+                    _ => panic!(),
                 }
             }
+            _ => panic!(),
+        }
+    }
+
+    pub fn get_string<T: AsRef<str>>(&self, name: T) -> String {
+        match &self.instance.data {
+            StructData::Single(instance) => {
+                let field = &instance.fields[name.as_ref()];
+
+                match field {
+                    FieldInstance::Value(BlendPrimitive::CharArray1D(v)) => v
+                        .iter()
+                        .take_while(|c| **c != 0)
+                        .map(|c| *c as u8 as char)
+                        .collect::<String>(),
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    pub fn get_f32_array<T: AsRef<str>>(&self, name: T) -> Vec<f32> {
+        //println!("get_f32_array {}", name.as_ref());
+        match &self.instance.data {
+            StructData::Single(instance) => {
+                let field = &instance.fields[name.as_ref()];
+
+                match field {
+                    FieldInstance::Value(BlendPrimitive::FloatArray1D(v)) => v.clone(),
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    pub fn get_i16_array<T: AsRef<str>>(&self, name: T) -> Vec<i16> {
+        //println!("get_f32_array {}", name.as_ref());
+        match &self.instance.data {
+            StructData::Single(instance) => {
+                let field = &instance.fields[name.as_ref()];
+
+                match field {
+                    FieldInstance::Value(BlendPrimitive::ShortArray1D(v)) => v.clone(),
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    pub fn get_instances<T: AsRef<str>>(&self, name: T) -> Vec<Instance<'a>> {
+        match &self.instance.data {
+            StructData::Single(instance) => {
+                let field = &instance.fields[name.as_ref()];
+                let mut ret = Vec::new();
+
+                match field {
+                    /*FieldInstance::Pointer(PointerInfo::Address(addr, _)) => {
+                        let instance = &self.blend.instance_structs[addr];
+                    
+                        println!("{:?}", instance);
+                        unimplemented!()
+                    }*/
+                    FieldInstance::PointerList(pointers) => {
+                        for ptr in pointers {
+                            match ptr {
+                                PointerInfo::Address(addr, _) => {
+                                    let instance = &self.blend.instance_structs[addr];
+
+                                    ret.push(Instance {
+                                        blend: self.blend,
+                                        instance: instance.clone(),
+                                    });
+                                }
+                                _ => panic!(),
+                            }
+                        }
+
+                        ret
+                    }
+                    FieldInstance::Pointer(PointerInfo::Address(addr, _)) => {
+                        let instance = &self.blend.instance_structs[addr];
+
+                        match &instance.data {
+                            StructData::List(instances) => {
+                                for data in instances {
+                                    ret.push(Instance {
+                                        blend: self.blend,
+                                        instance: Rc::new(StructInstance {
+                                            type_name: String::from("[unknown]"),
+                                            code: None,
+                                            old_memory_address: None,
+                                            data: StructData::Single(data.clone()),
+                                        }),
+                                    });
+                                }
+                            }
+                            StructData::Single(data) => {
+                                ret.push(Instance {
+                                    blend: self.blend,
+                                    instance: Rc::new(StructInstance {
+                                        type_name: String::from("[unknown]"),
+                                        code: None,
+                                        old_memory_address: None,
+                                        data: StructData::Single(data.clone()),
+                                    }),
+                                });
+                            }
+                        }
+
+                        /*ret.push(Instance {
+                            blend: self.blend,
+                            instance: instance.clone(),
+                        });*/
+
+                        ret
+                    }
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
         }
     }
 
@@ -216,7 +359,17 @@ pub fn main() {
 
     for object in blend.get_by_code([b'O', b'B']) {
         if object.get_instance("data").instance.code == Some([b'M', b'E']) {
-            println!("{}", object.get_instance("data").instance.to_string(0));
+            let data = object.get_instance("data");
+            let polys = data.get_instances("mpoly");
+            let materials = data.get_instances("mat");
+
+            for mat in materials {
+                println!("{}", mat.instance.to_string(0));
+
+                let nodetree = mat.get_instance("nodetree");
+
+                println!("{}", nodetree.instance.to_string(0));
+            }
         }
     }
 

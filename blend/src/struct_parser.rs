@@ -347,13 +347,13 @@ pub enum StructInstance {
     List(Vec<StructInstanceData>),
 }*/
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StructData {
     Single(StructInstanceData),
     List(Vec<StructInstanceData>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructInstance {
     pub type_name: String,
     pub code: Option<[u8; 2]>,
