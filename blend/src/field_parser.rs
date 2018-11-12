@@ -1,6 +1,6 @@
 use nom;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FieldInfo {
     Value,
     ValueArray1D { len: usize },

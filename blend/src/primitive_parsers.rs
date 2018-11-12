@@ -52,13 +52,13 @@ pub fn parse_f64(slice: &[u8], endianness: Endianness) -> f64 {
     }
 }
 
-/*pub fn parse_u32(slice: &[u8], endianness: Endianness) -> u32 {
+pub fn parse_u32(slice: &[u8], endianness: Endianness) -> u32 {
     let mut rdr = Cursor::new(slice);
     match endianness {
         Endianness::LittleEndian => rdr.read_u32::<LittleEndian>().unwrap(),
         Endianness::BigEndian => rdr.read_u32::<BigEndian>().unwrap(),
     }
-}*/
+}
 
 pub fn parse_i64(slice: &[u8], endianness: Endianness) -> i64 {
     let mut rdr = Cursor::new(slice);
