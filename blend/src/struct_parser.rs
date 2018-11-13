@@ -87,8 +87,8 @@ pub enum BlendPrimitive {
     Void,
 }
 
-impl std::fmt::Debug for BlendPrimitive {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl ::std::fmt::Debug for BlendPrimitive {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         use self::BlendPrimitive::*;
 
         match self {
@@ -148,11 +148,11 @@ macro_rules! field_convert (
         match (&$template.info, &$template.type_name[..]) {
             $(
                 (&FieldInfo::Value, $str_name) => {
-                    assert_eq!($field_data.len(), std::mem::size_of::<$f_type>());
+                    assert_eq!($field_data.len(), ::std::mem::size_of::<$f_type>());
                     $prim_type($converter($field_data, $endianness))
                 }
                 (&FieldInfo::ValueArray1D { len }, $str_name) => {
-                    assert_eq!($field_data.len() / len, std::mem::size_of::<$f_type>());
+                    assert_eq!($field_data.len() / len, ::std::mem::size_of::<$f_type>());
                     $prim_type_array1d(
                     $field_data
                         .chunks($field_data.len() / len)
@@ -161,7 +161,7 @@ macro_rules! field_convert (
                     )
                 }
                 (&FieldInfo::ValueArray2D { len1, len2 }, $str_name) => {
-                    assert_eq!($field_data.len() / (len1 * len2), std::mem::size_of::<$f_type>());
+                    assert_eq!($field_data.len() / (len1 * len2), ::std::mem::size_of::<$f_type>());
                     $prim_type_array2d(
                     $field_data
                         .chunks($field_data.len() / len1)
@@ -351,6 +351,7 @@ pub enum StructInstance {
 pub enum StructData {
     Single(StructInstanceData),
     List(Vec<StructInstanceData>),
+    Raw(Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -363,7 +364,9 @@ pub struct StructInstance {
 
 impl StructInstance {
     pub fn to_string(&self, tab_count: usize) -> String {
-        let tabs = std::iter::repeat("\t").take(tab_count).collect::<String>();
+        let tabs = ::std::iter::repeat("\t")
+            .take(tab_count)
+            .collect::<String>();
 
         let print_single = |this: &StructInstanceData| {
             let mut ret = if let Some(addr) = self.old_memory_address {
@@ -385,8 +388,7 @@ impl StructInstance {
                                     code: None,
                                     old_memory_address: None,
                                     data: StructData::Single(instance.clone()),
-                                }
-                                .to_string(tab_count + 1),
+                                }.to_string(tab_count + 1),
                             )[..],
                         );
                     }
@@ -413,13 +415,26 @@ impl StructInstance {
                 ret.push_str(&format!("{}] (and other {}...)", tabs, instances.len()));
                 ret
             }
+            StructData::Raw(data) => {
+                let mut ret = String::new();
+
+                ret.push_str(&format!(
+                    "{} ({}) {{\n",
+                    self.type_name,
+                    self.old_memory_address.unwrap()
+                ));
+                ret.push_str(&format!("{}\tdata = {:?}\n", tabs, data));
+                ret.push_str(&format!("{}}}", tabs)[..]);
+
+                ret
+            }
         }
     }
 }
 
 pub fn data_to_struct(
     instance_structs: &mut HashMap<u64, Rc<StructInstance>>,
-    seen_addresses: &mut std::collections::HashSet<u64>,
+    seen_addresses: &mut ::std::collections::HashSet<u64>,
     templates: &HashMap<u16, Vec<FieldTemplate>>,
     old_memory_address: Option<u64>,
     code: Option<[u8; 2]>,
@@ -507,7 +522,24 @@ pub fn data_to_struct(
 
                             let (struct_type_index, struct_template) = if field.type_index < 12 {
                                 if block.header.sdna_index == 0 {
-                                    println!("{:?}\n\t{:?}", field, block);
+                                    /*if block.header.old_memory_address == 139624370992456 {
+                                        println!("{:?}\n\t{:?} {:?}", field, block, block.data);
+                                    }*/
+                                    instance_structs.insert(
+                                        *addr,
+                                        Rc::new(StructInstance {
+                                            type_name: String::from("[raw]"),
+                                            code: Some([
+                                                block.header.code[0],
+                                                block.header.code[1],
+                                            ]),
+                                            old_memory_address: Some(
+                                                block.header.old_memory_address,
+                                            ),
+                                            data: StructData::Raw(block.data.clone()),
+                                        }),
+                                    );
+
                                     instance_fields
                                         .insert(field.name.clone(), FieldInstance::Pointer(info));
                                     continue 'field;
@@ -608,7 +640,7 @@ pub fn data_to_struct(
 
 pub fn block_to_struct(
     instance_structs: &mut HashMap<u64, Rc<StructInstance>>,
-    seen_addresses: &mut std::collections::HashSet<u64>,
+    seen_addresses: &mut ::std::collections::HashSet<u64>,
     templates: &HashMap<u16, Vec<FieldTemplate>>,
     old_memory_address: Option<u64>,
     code: Option<[u8; 2]>,

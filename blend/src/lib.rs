@@ -39,7 +39,7 @@ pub struct Blend {
 }
 
 #[derive(Derivative)]
-#[derivative(Debug)]
+#[derivative(Debug, Clone)]
 pub struct Instance<'a> {
     #[derivative(Debug = "ignore")]
     blend: &'a Blend,
@@ -109,6 +109,21 @@ impl<'a> Instance<'a> {
 
                 match field {
                     FieldInstance::Value(BlendPrimitive::FloatArray1D(v)) => v.clone(),
+                    FieldInstance::Pointer(PointerInfo::Address(addr, _)) => {
+                        let instance = &self.blend.instance_structs[addr];
+
+                        match instance.data {
+                            StructData::Raw(ref data) => {
+                                let f32_size = ::std::mem::size_of::<f32>();
+                                assert!(data.len() % f32_size == 0);
+
+                                data.chunks(f32_size)
+                                    .map(|s| parse_f32(s, self.blend.blend.header.endianness))
+                                    .collect()
+                            }
+                            _ => panic!(),
+                        }
+                    }
                     _ => panic!(),
                 }
             }
@@ -138,12 +153,6 @@ impl<'a> Instance<'a> {
                 let mut ret = Vec::new();
 
                 match field {
-                    /*FieldInstance::Pointer(PointerInfo::Address(addr, _)) => {
-                        let instance = &self.blend.instance_structs[addr];
-                    
-                        println!("{:?}", instance);
-                        unimplemented!()
-                    }*/
                     FieldInstance::PointerList(pointers) => {
                         for ptr in pointers {
                             match ptr {
@@ -189,15 +198,26 @@ impl<'a> Instance<'a> {
                                     }),
                                 });
                             }
+                            StructData::Raw(data) => panic!(),
                         }
-
-                        /*ret.push(Instance {
-                            blend: self.blend,
-                            instance: instance.clone(),
-                        });*/
-
                         ret
                     }
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+
+    pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
+        match &self.instance.data {
+            StructData::Single(instance) => {
+                let field = &instance.fields[name.as_ref()];
+
+                match field {
+                    FieldInstance::Pointer(PointerInfo::Null)
+                    | FieldInstance::Pointer(PointerInfo::Invalid) => false,
+                    FieldInstance::Pointer(_) => true,
                     _ => panic!(),
                 }
             }
@@ -209,10 +229,6 @@ impl<'a> Instance<'a> {
         match &self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
-
-                /*for field in &instance.fields {
-                    //a
-                }*/
 
                 match field {
                     FieldInstance::Struct(data) => Instance {
@@ -235,6 +251,7 @@ impl<'a> Instance<'a> {
                 }
             }
             StructData::List(_) => panic!(),
+            StructData::Raw(_) => panic!(),
         }
     }
 }
@@ -249,8 +266,7 @@ impl Blend {
                 dna_block,
                 blend.header.endianness,
                 blend.header.pointer_size,
-            )
-            .unwrap()
+            ).unwrap()
         };
 
         let mut templates: HashMap<u16, _> = HashMap::new();
@@ -344,43 +360,119 @@ impl Blend {
             .map(|(_, s)| Instance {
                 blend: &self,
                 instance: s.clone(),
-            })
-            .collect::<Vec<Instance>>()
+            }).collect::<Vec<Instance>>()
             .into_iter()
     }
 }
 
+fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
+    if !instance.is_valid("first") {
+        return Vec::new();
+    }
+
+    let first = instance.get_instance("first");
+    let last = instance.get_instance("last");
+
+    let mut cur = first;
+    let mut ret = Vec::new();
+
+    loop {
+        ret.push(cur.clone());
+
+        if cur.instance.old_memory_address == last.instance.old_memory_address {
+            break;
+        }
+        cur = cur.get_instance("next");
+    }
+
+    ret
+}
+
 pub fn main() {
-    let mut file = File::open("assets/simple2.blend").unwrap();
+    let mut file = File::open("assets/scenary2/scenary2.blend").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
 
     let blend = Blend::new(&data[..]);
 
     for object in blend.get_by_code([b'O', b'B']) {
+        println!("{}", object.get_instance("id").get_string("name"));
+
         if object.get_instance("data").instance.code == Some([b'M', b'E']) {
             let data = object.get_instance("data");
             let polys = data.get_instances("mpoly");
             let materials = data.get_instances("mat");
 
+            println!("\t{}", data.get_instance("id").get_string("name"));
+
             for mat in materials {
-                println!("{}", mat.instance.to_string(0));
+                println!(
+                    "\t\t{} ({})",
+                    mat.get_instance("id").get_string("name"),
+                    mat.instance.old_memory_address.unwrap()
+                );
 
                 let nodetree = mat.get_instance("nodetree");
+                let nodes = first_last_to_vec(nodetree.get_instance("nodes"));
+                let links = first_last_to_vec(nodetree.get_instance("links"));
 
-                println!("{}", nodetree.instance.to_string(0));
+                if let Some(bsdf_shader) = nodes
+                    .iter()
+                    .filter(|n| n.get_string("idname") == "ShaderNodeBsdfPrincipled")
+                    .next()
+                {
+                    let mut albedo: Option<Instance> = None;
+
+                    for link in links {
+                        let from_node = link.get_instance("fromnode");
+                        let to_node = link.get_instance("tonode");
+                        let to_sock = link.get_instance("tosock");
+
+                        match (
+                            &from_node.get_string("idname")[..],
+                            &to_node.get_string("idname")[..],
+                        ) {
+                            ("ShaderNodeTexImage", "ShaderNodeBsdfPrincipled") => {
+                                if to_sock.get_string("name") == "Base Color" {
+                                    albedo = Some(from_node);
+                                }
+                            }
+                            _ => (),
+                        }
+                    }
+
+                    if let Some(instance) = albedo {
+                        println!(
+                            "\t\t\talbedo image: {}",
+                            instance.get_instance("id").get_string("name")
+                        );
+                    } else {
+                        let inputs = first_last_to_vec(bsdf_shader.get_instance("inputs"));
+
+                        let color_input = inputs
+                            .iter()
+                            .filter(|i| i.get_string("name") == "Base Color")
+                            .next()
+                            .unwrap();
+
+                        println!(
+                            "\t\t\talbedo color: {:?}",
+                            color_input.get_f32_array("default_value")
+                        );
+                    }
+                }
             }
         }
     }
 
-    /*use std::fs::File;
+    use std::fs::File;
     use std::io::{Read, Write};
-    
+
     let mut buffer = File::create("hello2.txt").unwrap();
-    
+
     for (_, ref s) in &blend.instance_structs {
         let d1: Vec<_> = s.to_string(0).bytes().collect();
         buffer.write(&d1[..]).unwrap();
         buffer.write(&b"\n"[..]).unwrap();
-    }*/
+    }
 }
