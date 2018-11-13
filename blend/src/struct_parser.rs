@@ -1,14 +1,12 @@
 use blend_parse::{Blend as ParsedBlend, Block, Endianness, PointerSize};
 use blend_sdna::Dna;
-use field_parser::{parse_field, FieldInfo};
+use field_parser::FieldInfo;
 use primitive_parsers::{
     parse_f32, parse_f64, parse_i16, parse_i32, parse_i64, parse_i8, parse_u16, parse_u32,
     parse_u64, parse_u8,
 };
 //use std::collections::HashMap;
 use linked_hash_map::LinkedHashMap as HashMap;
-use std::fs::File;
-use std::io::Read;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -436,15 +434,13 @@ pub fn data_to_struct(
     instance_structs: &mut HashMap<u64, Rc<StructInstance>>,
     seen_addresses: &mut ::std::collections::HashSet<u64>,
     templates: &HashMap<u16, Vec<FieldTemplate>>,
-    old_memory_address: Option<u64>,
-    code: Option<[u8; 2]>,
     struct_template: &Vec<FieldTemplate>,
     struct_type_index: usize,
     blend: &ParsedBlend,
     dna: &Dna,
     data: &[u8],
 ) -> StructInstanceData {
-    let (struct_type_name, _) = &dna.types[struct_type_index as usize];
+    let (_struct_type_name, _) = &dna.types[struct_type_index as usize];
 
     let mut instance_fields: HashMap<String, FieldInstance> = HashMap::new();
 
@@ -468,8 +464,8 @@ pub fn data_to_struct(
                     instance_structs,
                     seen_addresses,
                     templates,
-                    None,
-                    None,
+                    //None,
+                    //None,
                     struct_template,
                     struct_type_index as usize,
                     blend,
@@ -659,8 +655,8 @@ pub fn block_to_struct(
                 instance_structs,
                 seen_addresses,
                 templates,
-                old_memory_address,
-                code,
+                //old_memory_address,
+                //code,
                 struct_template,
                 struct_type_index,
                 blend,
@@ -678,8 +674,8 @@ pub fn block_to_struct(
                 instance_structs,
                 seen_addresses,
                 templates,
-                old_memory_address,
-                code,
+                //old_memory_address,
+                //code,
                 struct_template,
                 struct_type_index,
                 blend,

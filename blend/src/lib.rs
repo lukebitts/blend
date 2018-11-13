@@ -14,17 +14,12 @@ mod field_parser;
 mod primitive_parsers;
 mod struct_parser;
 
-use blend_parse::{Blend as ParsedBlend, Block, Endianness, PointerSize};
+use blend_parse::Blend as ParsedBlend;
 use blend_sdna::Dna;
 use field_parser::{parse_field, FieldInfo};
-use primitive_parsers::{
-    parse_f32, parse_f64, parse_i16, parse_i32, parse_i64, parse_i8, parse_u16, parse_u32,
-    parse_u64, parse_u8,
-};
+use primitive_parsers::parse_f32;
 //use std::collections::HashMap;
 use linked_hash_map::LinkedHashMap as HashMap;
-use std::fs::File;
-use std::io::Read;
 use std::rc::Rc;
 use struct_parser::{
     block_to_struct, BlendPrimitive, FieldInstance, FieldTemplate, PointerInfo, StructData,
@@ -33,8 +28,8 @@ use struct_parser::{
 
 pub struct Blend {
     blend: ParsedBlend,
-    dna: Dna,
-    templates: HashMap<u16, Vec<FieldTemplate>>,
+    //dna: Dna,
+    //templates: HashMap<u16, Vec<FieldTemplate>>,
     instance_structs: HashMap<u64, Rc<StructInstance>>,
 }
 
@@ -198,7 +193,7 @@ impl<'a> Instance<'a> {
                                     }),
                                 });
                             }
-                            StructData::Raw(data) => panic!(),
+                            StructData::Raw(_data) => panic!(),
                         }
                         ret
                     }
@@ -347,8 +342,8 @@ impl Blend {
 
         Blend {
             blend,
-            dna,
-            templates,
+            //dna,
+            //templates,
             instance_structs,
         }
     }
@@ -400,7 +395,7 @@ pub fn main() {
 
         if object.get_instance("data").instance.code == Some([b'M', b'E']) {
             let data = object.get_instance("data");
-            let polys = data.get_instances("mpoly");
+            let _polys = data.get_instances("mpoly");
             let materials = data.get_instances("mat");
 
             println!("\t{}", data.get_instance("id").get_string("name"));
