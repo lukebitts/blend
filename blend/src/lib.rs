@@ -261,7 +261,8 @@ impl Blend {
                 dna_block,
                 blend.header.endianness,
                 blend.header.pointer_size,
-            ).unwrap()
+            )
+            .unwrap()
         };
 
         let mut templates: HashMap<u16, _> = HashMap::new();
@@ -355,12 +356,13 @@ impl Blend {
             .map(|(_, s)| Instance {
                 blend: &self,
                 instance: s.clone(),
-            }).collect::<Vec<Instance>>()
+            })
+            .collect::<Vec<Instance>>()
             .into_iter()
     }
 }
 
-fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
+pub fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
     if !instance.is_valid("first") {
         return Vec::new();
     }
