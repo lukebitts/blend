@@ -261,8 +261,7 @@ impl Blend {
                 dna_block,
                 blend.header.endianness,
                 blend.header.pointer_size,
-            )
-            .unwrap()
+            ).unwrap()
         };
 
         let mut templates: HashMap<u16, _> = HashMap::new();
@@ -356,8 +355,7 @@ impl Blend {
             .map(|(_, s)| Instance {
                 blend: &self,
                 instance: s.clone(),
-            })
-            .collect::<Vec<Instance>>()
+            }).collect::<Vec<Instance>>()
             .into_iter()
     }
 }
@@ -386,7 +384,7 @@ pub fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
 }
 
 pub fn main() {
-    let mut file = File::open("assets/scenary2/scenary2.blend").unwrap();
+    let mut file = File::open("assets/simple4.blend").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
 
@@ -398,67 +396,11 @@ pub fn main() {
         if object.get_instance("data").instance.code == Some([b'M', b'E']) {
             let data = object.get_instance("data");
             let _polys = data.get_instances("mpoly");
-            let materials = data.get_instances("mat");
+            //let materials = data.get_instances("mat");
 
             println!("\t{}", data.get_instance("id").get_string("name"));
 
-            for mat in materials {
-                println!(
-                    "\t\t{} ({})",
-                    mat.get_instance("id").get_string("name"),
-                    mat.instance.old_memory_address.unwrap()
-                );
-
-                let nodetree = mat.get_instance("nodetree");
-                let nodes = first_last_to_vec(nodetree.get_instance("nodes"));
-                let links = first_last_to_vec(nodetree.get_instance("links"));
-
-                if let Some(bsdf_shader) = nodes
-                    .iter()
-                    .filter(|n| n.get_string("idname") == "ShaderNodeBsdfPrincipled")
-                    .next()
-                {
-                    let mut albedo: Option<Instance> = None;
-
-                    for link in links {
-                        let from_node = link.get_instance("fromnode");
-                        let to_node = link.get_instance("tonode");
-                        let to_sock = link.get_instance("tosock");
-
-                        match (
-                            &from_node.get_string("idname")[..],
-                            &to_node.get_string("idname")[..],
-                        ) {
-                            ("ShaderNodeTexImage", "ShaderNodeBsdfPrincipled") => {
-                                if to_sock.get_string("name") == "Base Color" {
-                                    albedo = Some(from_node);
-                                }
-                            }
-                            _ => (),
-                        }
-                    }
-
-                    if let Some(instance) = albedo {
-                        println!(
-                            "\t\t\talbedo image: {}",
-                            instance.get_instance("id").get_string("name")
-                        );
-                    } else {
-                        let inputs = first_last_to_vec(bsdf_shader.get_instance("inputs"));
-
-                        let color_input = inputs
-                            .iter()
-                            .filter(|i| i.get_string("name") == "Base Color")
-                            .next()
-                            .unwrap();
-
-                        println!(
-                            "\t\t\talbedo color: {:?}",
-                            color_input.get_f32_array("default_value")
-                        );
-                    }
-                }
-            }
+            blend_instance_to_mesh(&data);
         }
     }
 
@@ -471,5 +413,123 @@ pub fn main() {
         let d1: Vec<_> = s.to_string(0).bytes().collect();
         buffer.write(&d1[..]).unwrap();
         buffer.write(&b"\n"[..]).unwrap();
+    }
+}
+
+pub fn blend_instance_to_mesh<'a>(mesh: &Instance<'a>) {
+    let faces = mesh.get_instances("mpoly");
+    let loops = mesh.get_instances("mloop");
+    let uvs = mesh.get_instances("mloopuv");
+    let verts = mesh.get_instances("mvert");
+
+    let mut index_count = 0;
+
+    let mut face_indice_count = 0;
+    let mut face_indice_counta = 0;
+
+    for face in &faces {
+        let len = face.get_i32("totloop");
+        let mut indexi = 1;
+
+        face_indice_counta += len * 2 / 3;
+
+        while indexi < len {
+            face_indice_count += 3;
+            indexi += 2;
+        }
+    }
+
+    let mut face_buffer = vec![0u32; face_indice_count];
+    let mut uv_buffer = vec![0f32; face_indice_count * 2];
+    let mut normal_buffer = vec![0f32; face_indice_count * 3];
+    let mut verts_array_buff = vec![0f32; face_indice_count * 3];
+
+    for face in &faces {
+        let len = face.get_i32("totloop");
+        let start = face.get_i32("loopstart");
+        let mut indexi = 1;
+        let mut offset = 0;
+
+        while indexi < len {
+            let mut index = 0;
+
+            for l in 0..3 {
+                if (indexi - 1) + l < len {
+                    index = start + (indexi - 1) + l;
+                } else {
+                    index = start;
+                }
+
+                let v = loops[index as usize].get_i32("v");
+                let vert = &verts[v as usize];
+                face_buffer[index_count] = index_count as u32;
+
+                let co = vert.get_f32_array("co");
+                verts_array_buff[index_count * 3 + 0] = co[0];
+                verts_array_buff[index_count * 3 + 1] = co[2];
+                verts_array_buff[index_count * 3 + 2] = -co[1];
+
+                let no = vert.get_i16_array("no");
+                normal_buffer[index_count * 3 + 0] = no[0] as f32 / 32767.0;
+                normal_buffer[index_count * 3 + 1] = no[2] as f32 / 32767.0;
+                normal_buffer[index_count * 3 + 2] = -no[1] as f32 / 32767.0;
+
+                let uv = uvs[index as usize].get_f32_array("uv");
+                let uv_x = uv[0];
+                let uv_y = uv[1];
+                uv_buffer[index_count * 2 + 0] = uv_x;
+                uv_buffer[index_count * 2 + 1] = uv_y;
+
+                index_count += 1;
+            }
+
+            indexi += 2;
+        }
+    }
+    println!(
+        "{:?}\n{:?}\n{:?}",
+        verts_array_buff.chunks(3).collect::<Vec<_>>(),
+        normal_buffer.chunks(3).collect::<Vec<_>>(),
+        uv_buffer.chunks(2).collect::<Vec<_>>()
+    );
+
+    let xy = (&verts_array_buff[..])
+        .chunks(3)
+        .enumerate()
+        .map(|(i, pos)| {
+            (
+                [pos[0], pos[1], pos[2]],
+                [
+                    normal_buffer[i * 3 + 0],
+                    normal_buffer[i * 3 + 1],
+                    normal_buffer[i * 3 + 2],
+                ],
+                [uv_buffer[i * 2 + 0], uv_buffer[i * 2 + 1]],
+                [0., 0., 0.],
+            )
+        }).collect::<Vec<_>>();
+
+    for c in xy.chunks(3) {
+        let v0 = c[0].0;
+        let v1 = c[1].0;
+        let v2 = c[2].0;
+
+        let uv0 = c[0].2;
+        let uv1 = c[1].2;
+        let uv2 = c[2].2;
+
+        let n0 = c[0].1;
+
+        let v2v1 = pos2.sub(pos1);
+        let v3v1 = pos3.sub(pos1);
+
+        let c2c1b = uv2.getY() - uv1.getY();
+        let c3c1b = uv3.getY() - uv1.getY();
+
+        let t = v2v1.mult(c3c1b).sub(v3v1.mult(c2c1b));
+
+        let b = n.cross(t);
+
+        let smoothTangent = b.cross(n).normalize();
     }
 }
