@@ -240,7 +240,7 @@ impl<'a> Instance<'a> {
                             blend: self.blend,
                             instance: self.blend.instance_structs[addr].clone(),
                         },
-                        _ => panic!(),
+                        _ => panic!("could not get instance. {}: {:?}", name.as_ref(), field),
                     },
                     _ => panic!(),
                 }
@@ -261,7 +261,8 @@ impl Blend {
                 dna_block,
                 blend.header.endianness,
                 blend.header.pointer_size,
-            ).unwrap()
+            )
+            .unwrap()
         };
 
         let mut templates: HashMap<u16, _> = HashMap::new();
@@ -355,7 +356,8 @@ impl Blend {
             .map(|(_, s)| Instance {
                 blend: &self,
                 instance: s.clone(),
-            }).collect::<Vec<Instance>>()
+            })
+            .collect::<Vec<Instance>>()
             .into_iter()
     }
 }
@@ -384,7 +386,7 @@ pub fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
 }
 
 pub fn main() {
-    let mut file = File::open("assets/simple4.blend").unwrap();
+    let mut file = File::open("assets/scenary2/scenary2.blend").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
 
@@ -486,12 +488,12 @@ pub fn blend_instance_to_mesh<'a>(mesh: &Instance<'a>) {
             indexi += 2;
         }
     }
-    println!(
+    /*println!(
         "{:?}\n{:?}\n{:?}",
         verts_array_buff.chunks(3).collect::<Vec<_>>(),
         normal_buffer.chunks(3).collect::<Vec<_>>(),
         uv_buffer.chunks(2).collect::<Vec<_>>()
-    );
+    );*/
 
     let xy = (&verts_array_buff[..])
         .chunks(3)
@@ -507,29 +509,6 @@ pub fn blend_instance_to_mesh<'a>(mesh: &Instance<'a>) {
                 [uv_buffer[i * 2 + 0], uv_buffer[i * 2 + 1]],
                 [0., 0., 0.],
             )
-        }).collect::<Vec<_>>();
-
-    for c in xy.chunks(3) {
-        let v0 = c[0].0;
-        let v1 = c[1].0;
-        let v2 = c[2].0;
-
-        let uv0 = c[0].2;
-        let uv1 = c[1].2;
-        let uv2 = c[2].2;
-
-        let n0 = c[0].1;
-
-        let v2v1 = pos2.sub(pos1);
-        let v3v1 = pos3.sub(pos1);
-
-        let c2c1b = uv2.getY() - uv1.getY();
-        let c3c1b = uv3.getY() - uv1.getY();
-
-        let t = v2v1.mult(c3c1b).sub(v3v1.mult(c2c1b));
-
-        let b = n.cross(t);
-
-        let smoothTangent = b.cross(n).normalize();
-    }
+        })
+        .collect::<Vec<_>>();
 }

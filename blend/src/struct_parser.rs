@@ -386,7 +386,8 @@ impl StructInstance {
                                     code: None,
                                     old_memory_address: None,
                                     data: StructData::Single(instance.clone()),
-                                }.to_string(tab_count + 1),
+                                }
+                                .to_string(tab_count + 1),
                             )[..],
                         );
                     }
@@ -518,9 +519,6 @@ pub fn data_to_struct(
 
                             let (struct_type_index, struct_template) = if field.type_index < 12 {
                                 if block.header.sdna_index == 0 {
-                                    /*if block.header.old_memory_address == 139624370992456 {
-                                        println!("{:?}\n\t{:?} {:?}", field, block, block.data);
-                                    }*/
                                     instance_structs.insert(
                                         *addr,
                                         Rc::new(StructInstance {
