@@ -42,7 +42,6 @@ named!(value < &str, (&str, FieldInfo) >,
     )
 );
 
-//named!(pub field < &str, Field >,
 named!(pub parse_field (&str) -> (&str, FieldInfo),
     do_parse!(
         field_info: alt!(

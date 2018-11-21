@@ -74,7 +74,7 @@ impl SdnaParseContext {
                 types_len: u32!(self.endianness.into()) >>
                 types: count!(  
                     terminated!(
-                        map!(map!(take_while!(|b: u8| b!=0), String::from_utf8_lossy), Into::into), tag!([0])
+                        map!(take_while!(|b: u8| b!=0), |b| b.into_iter().map(|b| *b as char).collect::<String>()), tag!([0])
                     ), types_len as usize
                 ) >>
                 skip_len: value!({ 
@@ -109,7 +109,7 @@ impl SdnaParseContext {
                 names_len: u32!(self.endianness.into()) >>
                 names: count!(  
                     terminated!(
-                        map!(map!(take_while!(|b: u8| b!=0), String::from_utf8_lossy), Into::into), 
+                        map!(take_while!(|b: u8| b!=0), |b| b.into_iter().map(|b| *b as char).collect::<String>()),
                         tag!([0])
                     ), names_len as usize
                 ) >>

@@ -1,12 +1,11 @@
 use blend_parse::{Blend as ParsedBlend, Block, Endianness, PointerSize};
 use blend_sdna::Dna;
 use field_parser::FieldInfo;
+use linked_hash_map::LinkedHashMap as HashMap;
 use primitive_parsers::{
     parse_f32, parse_f64, parse_i16, parse_i32, parse_i64, parse_i8, parse_u16, parse_u32,
     parse_u64, parse_u8,
 };
-//use std::collections::HashMap;
-use linked_hash_map::LinkedHashMap as HashMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -339,12 +338,6 @@ pub struct StructInstanceData {
     pub fields: HashMap<String, FieldInstance>,
 }
 
-/*#[derive(Debug)]
-pub enum StructInstance {
-    Single(StructInstanceData),
-    List(Vec<StructInstanceData>),
-}*/
-
 #[derive(Debug, Clone)]
 pub enum StructData {
     Single(StructInstanceData),
@@ -465,8 +458,6 @@ pub fn data_to_struct(
                     instance_structs,
                     seen_addresses,
                     templates,
-                    //None,
-                    //None,
                     struct_template,
                     struct_type_index as usize,
                     blend,
@@ -625,9 +616,6 @@ pub fn data_to_struct(
     }
 
     StructInstanceData {
-        //old_memory_address,
-        //code,
-        //type_name: struct_type_name.clone(),
         fields: instance_fields,
     }
 }
@@ -653,8 +641,6 @@ pub fn block_to_struct(
                 instance_structs,
                 seen_addresses,
                 templates,
-                //old_memory_address,
-                //code,
                 struct_template,
                 struct_type_index,
                 blend,
@@ -672,8 +658,6 @@ pub fn block_to_struct(
                 instance_structs,
                 seen_addresses,
                 templates,
-                //old_memory_address,
-                //code,
                 struct_template,
                 struct_type_index,
                 blend,

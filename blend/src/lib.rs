@@ -17,9 +17,8 @@ mod struct_parser;
 use blend_parse::Blend as ParsedBlend;
 use blend_sdna::Dna;
 use field_parser::{parse_field, FieldInfo};
-use primitive_parsers::parse_f32;
-//use std::collections::HashMap;
 use linked_hash_map::LinkedHashMap as HashMap;
+use primitive_parsers::parse_f32;
 use std::rc::Rc;
 use struct_parser::{
     block_to_struct, BlendPrimitive, FieldInstance, FieldTemplate, PointerInfo, StructData,
@@ -28,8 +27,6 @@ use struct_parser::{
 
 pub struct Blend {
     blend: ParsedBlend,
-    //dna: Dna,
-    //templates: HashMap<u16, Vec<FieldTemplate>>,
     instance_structs: HashMap<u64, Rc<StructInstance>>,
 }
 
@@ -47,14 +44,9 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_i32<T: AsRef<str>>(&self, name: T) -> i32 {
-        //println!("{:?}", self.instance.type_name);
-        //println!("<!> {}", name.as_ref());
         match &self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
-
-                //println!("\t<!> {:?}", field);
-
                 match field {
                     FieldInstance::Value(BlendPrimitive::Int(v)) => *v,
                     _ => panic!(),
@@ -97,7 +89,6 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_f32_array<T: AsRef<str>>(&self, name: T) -> Vec<f32> {
-        //println!("get_f32_array {}", name.as_ref());
         match &self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
@@ -127,7 +118,6 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_i16_array<T: AsRef<str>>(&self, name: T) -> Vec<i16> {
-        //println!("get_f32_array {}", name.as_ref());
         match &self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
@@ -343,8 +333,6 @@ impl Blend {
 
         Blend {
             blend,
-            //dna,
-            //templates,
             instance_structs,
         }
     }
@@ -383,132 +371,4 @@ pub fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
     }
 
     ret
-}
-
-pub fn main() {
-    let mut file = File::open("assets/scenary2/scenary2.blend").unwrap();
-    let mut data = Vec::new();
-    file.read_to_end(&mut data).unwrap();
-
-    let blend = Blend::new(&data[..]);
-
-    for object in blend.get_by_code([b'O', b'B']) {
-        println!("{}", object.get_instance("id").get_string("name"));
-
-        if object.get_instance("data").instance.code == Some([b'M', b'E']) {
-            let data = object.get_instance("data");
-            let _polys = data.get_instances("mpoly");
-            //let materials = data.get_instances("mat");
-
-            println!("\t{}", data.get_instance("id").get_string("name"));
-
-            blend_instance_to_mesh(&data);
-        }
-    }
-
-    use std::fs::File;
-    use std::io::{Read, Write};
-
-    let mut buffer = File::create("hello2.txt").unwrap();
-
-    for (_, ref s) in &blend.instance_structs {
-        let d1: Vec<_> = s.to_string(0).bytes().collect();
-        buffer.write(&d1[..]).unwrap();
-        buffer.write(&b"\n"[..]).unwrap();
-    }
-}
-
-pub fn blend_instance_to_mesh<'a>(mesh: &Instance<'a>) {
-    let faces = mesh.get_instances("mpoly");
-    let loops = mesh.get_instances("mloop");
-    let uvs = mesh.get_instances("mloopuv");
-    let verts = mesh.get_instances("mvert");
-
-    let mut index_count = 0;
-
-    let mut face_indice_count = 0;
-    let mut face_indice_counta = 0;
-
-    for face in &faces {
-        let len = face.get_i32("totloop");
-        let mut indexi = 1;
-
-        face_indice_counta += len * 2 / 3;
-
-        while indexi < len {
-            face_indice_count += 3;
-            indexi += 2;
-        }
-    }
-
-    let mut face_buffer = vec![0u32; face_indice_count];
-    let mut uv_buffer = vec![0f32; face_indice_count * 2];
-    let mut normal_buffer = vec![0f32; face_indice_count * 3];
-    let mut verts_array_buff = vec![0f32; face_indice_count * 3];
-
-    for face in &faces {
-        let len = face.get_i32("totloop");
-        let start = face.get_i32("loopstart");
-        let mut indexi = 1;
-        let mut offset = 0;
-
-        while indexi < len {
-            let mut index = 0;
-
-            for l in 0..3 {
-                if (indexi - 1) + l < len {
-                    index = start + (indexi - 1) + l;
-                } else {
-                    index = start;
-                }
-
-                let v = loops[index as usize].get_i32("v");
-                let vert = &verts[v as usize];
-                face_buffer[index_count] = index_count as u32;
-
-                let co = vert.get_f32_array("co");
-                verts_array_buff[index_count * 3 + 0] = co[0];
-                verts_array_buff[index_count * 3 + 1] = co[2];
-                verts_array_buff[index_count * 3 + 2] = -co[1];
-
-                let no = vert.get_i16_array("no");
-                normal_buffer[index_count * 3 + 0] = no[0] as f32 / 32767.0;
-                normal_buffer[index_count * 3 + 1] = no[2] as f32 / 32767.0;
-                normal_buffer[index_count * 3 + 2] = -no[1] as f32 / 32767.0;
-
-                let uv = uvs[index as usize].get_f32_array("uv");
-                let uv_x = uv[0];
-                let uv_y = uv[1];
-                uv_buffer[index_count * 2 + 0] = uv_x;
-                uv_buffer[index_count * 2 + 1] = uv_y;
-
-                index_count += 1;
-            }
-
-            indexi += 2;
-        }
-    }
-    /*println!(
-        "{:?}\n{:?}\n{:?}",
-        verts_array_buff.chunks(3).collect::<Vec<_>>(),
-        normal_buffer.chunks(3).collect::<Vec<_>>(),
-        uv_buffer.chunks(2).collect::<Vec<_>>()
-    );*/
-
-    let xy = (&verts_array_buff[..])
-        .chunks(3)
-        .enumerate()
-        .map(|(i, pos)| {
-            (
-                [pos[0], pos[1], pos[2]],
-                [
-                    normal_buffer[i * 3 + 0],
-                    normal_buffer[i * 3 + 1],
-                    normal_buffer[i * 3 + 2],
-                ],
-                [uv_buffer[i * 2 + 0], uv_buffer[i * 2 + 1]],
-                [0., 0., 0.],
-            )
-        })
-        .collect::<Vec<_>>();
 }
