@@ -149,7 +149,17 @@ impl<'a> Instance<'a> {
                                         instance: instance.clone(),
                                     });
                                 }
-                                _ => panic!(),
+                                PointerInfo::Invalid => panic!(
+                                    "trying to access invalid pointer. ({}: {:?})",
+                                    name.as_ref(),
+                                    field
+                                ),
+                                PointerInfo::Null => panic!(
+                                    "trying to access null pointer. ({}: {:?})",
+                                    name.as_ref(),
+                                    field
+                                ),
+                                _ => panic!("unexpected access"),
                             }
                         }
 
@@ -203,7 +213,18 @@ impl<'a> Instance<'a> {
                     FieldInstance::Pointer(PointerInfo::Null)
                     | FieldInstance::Pointer(PointerInfo::Invalid) => false,
                     FieldInstance::Pointer(_) => true,
-                    _ => panic!(),
+                    FieldInstance::PointerList(ref pointers) => {
+                        if pointers.len() == 0
+                            || pointers.iter().any(|p| match p {
+                                &PointerInfo::Address(..) => false,
+                                _ => true,
+                            }) {
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    _ => panic!("{}: {:?}", name.as_ref(), field),
                 }
             }
             _ => panic!(),

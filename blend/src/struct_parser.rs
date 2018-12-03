@@ -269,7 +269,7 @@ impl BlendPrimitive {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum PointerInfo {
     Invalid,
     Null,
