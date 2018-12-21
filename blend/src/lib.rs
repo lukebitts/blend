@@ -26,8 +26,8 @@ use struct_parser::{
 };
 
 pub struct Blend {
-    blend: ParsedBlend,
-    instance_structs: HashMap<u64, Rc<StructInstance>>,
+    pub blend: ParsedBlend,
+    pub instance_structs: HashMap<u64, Rc<StructInstance>>,
 }
 
 #[derive(Derivative)]
@@ -131,6 +131,7 @@ impl<'a> Instance<'a> {
         }
     }
 
+    //TODO: rename to get_instance_vec
     pub fn get_instances<T: AsRef<str>>(&self, name: T) -> Vec<Instance<'a>> {
         match &self.instance.data {
             StructData::Single(instance) => {
@@ -174,7 +175,7 @@ impl<'a> Instance<'a> {
                                     ret.push(Instance {
                                         blend: self.blend,
                                         instance: Rc::new(StructInstance {
-                                            type_name: String::from("[unknown]"),
+                                            type_name: instance.type_name.clone(),
                                             code: None,
                                             old_memory_address: None,
                                             data: StructData::Single(data.clone()),
@@ -182,15 +183,10 @@ impl<'a> Instance<'a> {
                                     });
                                 }
                             }
-                            StructData::Single(data) => {
+                            StructData::Single(_) => {
                                 ret.push(Instance {
                                     blend: self.blend,
-                                    instance: Rc::new(StructInstance {
-                                        type_name: String::from("[unknown]"),
-                                        code: None,
-                                        old_memory_address: None,
-                                        data: StructData::Single(data.clone()),
-                                    }),
+                                    instance: instance.clone(),
                                 });
                             }
                             StructData::Raw(_data) => panic!(),
@@ -218,7 +214,8 @@ impl<'a> Instance<'a> {
                             || pointers.iter().any(|p| match p {
                                 &PointerInfo::Address(..) => false,
                                 _ => true,
-                            }) {
+                            })
+                        {
                             false
                         } else {
                             true
@@ -240,7 +237,7 @@ impl<'a> Instance<'a> {
                     FieldInstance::Struct(data) => Instance {
                         blend: self.blend,
                         instance: Rc::new(StructInstance {
-                            type_name: String::from("[unknown]"),
+                            type_name: data.type_name.clone(),
                             code: None,
                             old_memory_address: None,
                             data: StructData::Single(data.clone()),
@@ -371,6 +368,7 @@ impl Blend {
     }
 }
 
+//TODO: put this inside the get_instances
 pub fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
     if !instance.is_valid("first") {
         return Vec::new();

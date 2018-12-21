@@ -335,6 +335,7 @@ pub enum FieldInstance {
 
 #[derive(Debug, Clone)]
 pub struct StructInstanceData {
+    pub type_name: String,
     pub fields: HashMap<String, FieldInstance>,
 }
 
@@ -359,9 +360,17 @@ impl StructInstance {
             .take(tab_count)
             .collect::<String>();
 
-        let print_single = |this: &StructInstanceData| {
+        let print_single = |this: &StructInstanceData, tab_count: usize, show_addr: bool| {
+            let tabs = ::std::iter::repeat("\t")
+                .take(tab_count)
+                .collect::<String>();
+
             let mut ret = if let Some(addr) = self.old_memory_address {
-                format!("{} ({}) {{\n", self.type_name, addr)
+                if show_addr {
+                    format!("{} ({}) {{\n", self.type_name, addr)
+                } else {
+                    format!("{{\n")
+                }
             } else {
                 format!("{} {{\n", self.type_name)
             };
@@ -375,7 +384,7 @@ impl StructInstance {
                                 tabs,
                                 field_name,
                                 StructInstance {
-                                    type_name: String::from("[unknown]"),
+                                    type_name: instance.type_name.clone(),
                                     code: None,
                                     old_memory_address: None,
                                     data: StructData::Single(instance.clone()),
@@ -396,15 +405,21 @@ impl StructInstance {
         };
 
         match &self.data {
-            StructData::Single(instance) => print_single(&instance),
+            StructData::Single(instance) => print_single(&instance, tab_count, true),
             StructData::List(instances) => {
                 let mut ret = String::new();
-                ret.push_str(&format!("{}[", tabs));
+                ret.push_str(&format!(
+                    "{}{} ({}) [",
+                    tabs,
+                    self.type_name,
+                    self.old_memory_address.unwrap()
+                ));
                 for instance in instances {
-                    ret.push_str(&print_single(&instance));
-                    break;
+                    ret.push_str(&format!("\n\t{}", tabs));
+                    ret.push_str(&print_single(&instance, tab_count + 1, false));
+                    //break;
                 }
-                ret.push_str(&format!("{}] (and other {}...)", tabs, instances.len()));
+                ret.push_str(&format!("\n{}]", tabs));
                 ret
             }
             StructData::Raw(data) => {
@@ -434,7 +449,7 @@ pub fn data_to_struct(
     dna: &Dna,
     data: &[u8],
 ) -> StructInstanceData {
-    let (_struct_type_name, _) = &dna.types[struct_type_index as usize];
+    let (struct_type_name, _) = &dna.types[struct_type_index as usize];
 
     let mut instance_fields: HashMap<String, FieldInstance> = HashMap::new();
 
@@ -510,10 +525,16 @@ pub fn data_to_struct(
 
                             let (struct_type_index, struct_template) = if field.type_index < 12 {
                                 if block.header.sdna_index == 0 {
+                                    // We don't have enough type information to parse this block. As far as I
+                                    // understand this means this is a primitive array. We don't know which
+                                    // primitive type though, since the field.type_index doesn't carry
+                                    // this information, being always set to 0. The user has to decide the type
+                                    // when accessing this.
+
                                     instance_structs.insert(
                                         *addr,
                                         Rc::new(StructInstance {
-                                            type_name: String::from("[raw]"),
+                                            type_name: String::from("[Unknown Type]"),
                                             code: Some([
                                                 block.header.code[0],
                                                 block.header.code[1],
@@ -616,6 +637,7 @@ pub fn data_to_struct(
     }
 
     StructInstanceData {
+        type_name: struct_type_name.clone(),
         fields: instance_fields,
     }
 }
