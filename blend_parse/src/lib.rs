@@ -97,7 +97,7 @@ impl Blend {
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, BlendParseError> {
         use std::fs::File;
-        use std::io::Read;
+        use std::io::{Read, Cursor};
 
         let mut file = File::open(path).map_err(|e| BlendParseError::Io(e))?;
 
@@ -105,13 +105,6 @@ impl Blend {
         file.read_to_end(&mut buffer)
             .map_err(|e| BlendParseError::Io(e))?;
 
-        let parser = parser::BlendParseContext::default();
-
-        let res = parser.blend(&buffer);
-
-        match res {
-            (_, Ok((_, blend))) => Ok(blend),
-            (_, Err(_)) => Err(BlendParseError::InvalidData),
-        }
+        Blend::new(Cursor::new(buffer))
     }
 }
