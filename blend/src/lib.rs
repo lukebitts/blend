@@ -19,6 +19,8 @@ use blend_sdna::Dna;
 use field_parser::{parse_field, FieldInfo};
 use linked_hash_map::LinkedHashMap as HashMap;
 use primitive_parsers::parse_f32;
+use std::io::Read;
+use std::path::Path;
 use std::rc::Rc;
 use struct_parser::{
     block_to_struct, BlendPrimitive, FieldInstance, FieldTemplate, PointerInfo, StructData,
@@ -260,7 +262,20 @@ impl<'a> Instance<'a> {
 }
 
 impl Blend {
-    pub fn new(data: &[u8]) -> Blend {
+    pub fn from_path<T: AsRef<Path>>(path: T) -> Blend {
+        use std::fs::File;
+        use std::io::{Cursor, Read};
+
+        let mut file = File::open(path).map_err(|e| BlendParseError::Io(e))?;
+
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .map_err(|e| BlendParseError::Io(e))?;
+
+        Blend::new(Cursor::new(buffer))
+    }
+
+    pub fn new<T: Read>(mut data: T) -> Blend {
         let blend = ParsedBlend::new(&data[..]).unwrap();
 
         let dna = {

@@ -1,3 +1,6 @@
+//! The nom parser used by the library. It is recommended to use `Blend::new` instead of
+//! the `parser::BlendParseContext` directly.
+
 use nom::{IResult, Err, Needed, be_u64, be_u32, le_u64, le_u32};
 use super::{PointerSize, Endianness, Block, BlockHeader, Header, Blend};
 

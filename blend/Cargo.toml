@@ -1,13 +1,13 @@
 [package]
 name = "blend"
-version = "0.1.0"
-authors = ["Lucas <lbittencs@gmail.com>"]
+version = "0.5.0"
+authors = ["Lucas Bittencourt <lbittencs@gmail.com>"]
 
 [dependencies]
 blend_parse = { path="../blend_parse" }
 blend_sdna = { path="../blend_sdna" }
 num = "0.2.0"
-byteorder = "1.2"
-derivative = "1.0.1"
-nom = "4.1"
+byteorder = "1.2.7"
+derivative = "1.0.2"
+nom = "4.1.1"
 linked-hash-map = "0.5.1"

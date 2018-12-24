@@ -2,65 +2,52 @@
 
 This crates parses the file blocks and their headers in `blend` files from [Blender](https://www.blender.org/).
 
-## A `blend` file
+## The `.blend` file
 
-A `blend` file is a binary format which, simplifying a lot, has a header with some information about how to parse the file and a bunch of binary "file-blocks" which also have headers. Something like this:
-
+A .blend is a binary file which starts with a header and has a number of "file-blocks". These file-blocks also contain a header and some binary data. A simple .blend file has over 2000 of these file-blocks.
 
     --------------------------------
-    | .blend header                |
+    | header                       |
     --------------------------------
     | ---------------------------- |
-    | | file block header        | |
+    | | file-block header        | |
     | ---------------------------- |
-    | | binary block data        | |
+    | | file-block data          | |
     | ---------------------------- |
     |                              |
     | ---------------------------- |
-    | | file block header        | |
+    | | file-block header        | |
     | ---------------------------- |
-    | | binary block data        | |
+    | | file-block data          | |
     | ---------------------------- |
     |                              |
     |           [ ... ]            |
     --------------------------------
 
-These binary blocks represent C structs. You can have an `Object` block, a `Scene` block or a block representing the user settings. A simple `blend` file has over two thousand of these blocks.
+## More info
 
-## The DNA of a `blend` file
+As you might have guessed, there is more to parsing a .blend file. This crates parses only the headers and file-blocks. If you have interest in also parsing the file-block data, try [blend_sdna](todo:add_link) and [blend](todo:add_link).
 
-To fully parse the binary file-blocks you need to use a special block which is the DNA of the `blend` file. The DNA block gives you the definition of the C structs and can be used to transform a file-block into a `Camera` for example.
-
-## This crate
-
-This crate does not fully parse the file-blocks or the DNA block, all it does is parse the header of the file and the header of the file-blocks, you decide what to do with the binary data you get.
-
-## Reading more data from the `blend` file
-
-While this crate can't help you read the data inside the file-blocks, it is a building block for more complex use cases:
-
- * [blend_sdna](todo:add_link) can be used along with this crate to parse the DNA of the blend file.
- * [blend](todo:add_link) uses both `blend_sdna` and this crate to fully parse the `blend` file and the binary file-blocks, allowing access to the actual `Object`s or `Camera`s, etc.
+This crate does not support gzip-compressed .blend files, but if you decompress the file before trying to parse it, it should work.
 
  ## Example
 
  ```rust
+use blend_parse::Blend;
+use std::env;
+use std::path;
+
 fn main() {
-    let blend = match Blend::from_path("path_to_your.blend") {
-        Ok(blend) => blend,
-        Err(e) => match e {
-            BlendParseError::Io(_) => panic!("File could not be opened"),
-            BlendParseError::InvalidData => panic!("File could not be parsed correctly"),
-        }
-    };
+    let base_path = path::PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let blend_path = base_path.join("examples/userpref.blend");
+
+    let blend = Blend::from_path(blend_path).unwrap();
 
     for block in blend.blocks {
-        match block.data {
-            b"MA\0\0" => println!("A material block"),
-            b"OB\0\0" => println!("An object"),
-            b"CA\0\0" => println!("A camera"),
-            b"DATA" => println!("A data block, type information comes from somewhere else"),
-            _ => (),
+        match &block.header.code {
+            b"GLOB" => println!("GLOB"),
+            b"DATA" => println!("DATA"),
+            n => (),
         }
     }
 }

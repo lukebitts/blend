@@ -1,7 +1,8 @@
 [package]
 name = "blend_parse"
 version = "0.1.0"
-authors = ["lucas_souza"]
+authors = ["Lucas Bittencourt (lbittencs@gmail.com)"]
+edition = "2018"
 
 [dependencies]
-nom = "4.1"
+nom = "4.1.1"

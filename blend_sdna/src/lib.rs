@@ -1,3 +1,41 @@
+//! # Example
+//! ```rust
+//! use blend_parse::Blend;
+//! use blend_sdna::Dna;
+//! use std::env;
+//! use std::path;
+//! 
+//! let blend = Blend::from_path("your_blend_file.blend").unwrap();
+//! let dna = {
+//!     let dna_block = &blend.blocks[blend.blocks.len() - 1];
+//!     Dna::from_sdna_block(
+//!         dna_block,
+//!         blend.header.endianness,
+//!         blend.header.pointer_size,
+//!     )
+//!     .unwrap()
+//! };
+//! 
+//! for (struct_type_index, struct_fields) in &dna.structs {
+//!     let (struct_type_name, struct_type_size) = &dna.types[*struct_type_index as usize];
+//! 
+//!     println!("{} ({} bytes) {{", struct_type_name, struct_type_size);
+//! 
+//!     for (struct_field_type_index, struct_field_name_index) in struct_fields {
+//!         let struct_field_name = &dna.names[*struct_field_name_index as usize];
+//!         let (struct_field_type_name, struct_field_type_size) =
+//!             &dna.types[*struct_field_type_index as usize];
+//! 
+//!         println!(
+//!             "\t{} {} ({} bytes);",
+//!             struct_field_type_name, struct_field_name, struct_field_type_size
+//!         );
+//!     }
+//! 
+//!     println!("}}");
+//! }
+//! ```
+
 extern crate blend_parse;
 #[macro_use]
 extern crate nom;
@@ -10,6 +48,7 @@ pub enum SdnaParseError {
     HeaderCodeIsNotDna1,
 }
 
+/// The DNA type, following the same structure as the .blend file.
 #[derive(Debug)]
 pub struct Dna {
     pub names: Vec<String>,
@@ -18,6 +57,8 @@ pub struct Dna {
 }
 
 impl Dna {
+    /// Returns a new DNA block from a normal file-block. This function expects the correct file-block and returns an
+    /// error otherwise.
     pub fn from_sdna_block(dna_block: &Block, endianness: Endianness, pointer_size: PointerSize) -> Result<Dna, SdnaParseError> {
         if &dna_block.header.code != b"DNA1" {
             return Err(SdnaParseError::HeaderCodeIsNotDna1);
@@ -41,6 +82,7 @@ impl Dna {
     }
 }
 
+/// The nom parser used to parse the DNA. It is recommended to use `Dna::new` instead of this.
 #[derive(Debug)]
 pub struct SdnaParseContext {
     endianness: Endianness,
