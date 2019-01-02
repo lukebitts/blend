@@ -1,12 +1,12 @@
-extern crate blend;
-
 use blend::Blend;
 use std::fs::File;
 use std::io::{self, BufWriter, Read, Write};
 use std::{env, path};
 
 pub fn main() -> Result<(), io::Error> {
-    let base_path = path::PathBuf::from(env::var_os("CARGO_MANIFEST_DIR")?);
+    let base_path = path::PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR").expect("could not find cargo manifest dir"),
+    );
 
     let blend_path = base_path.join("examples/print_blend/simple.blend");
     let output_path = base_path.join("examples/print_blend/output.txt");
@@ -19,7 +19,7 @@ pub fn main() -> Result<(), io::Error> {
     let mut buffer = BufWriter::new(File::create(output_path)?);
 
     for (_struct_addr, ref struct_instance) in &blend.instance_structs {
-        let instance_string: Vec<_> = struct_instance.to_string(0).bytes().collect();
+        let instance_string: Vec<_> = struct_instance.to_string().bytes().collect();
         buffer.write(&instance_string[..])?;
         buffer.write(&b"\n"[..])?;
     }

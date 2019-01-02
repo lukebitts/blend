@@ -2,8 +2,6 @@
 //!
 //! ```rust
 //! use blend_parse::Blend;
-//! use std::env;
-//! use std::path;
 //!
 //! fn main() {
 //!     let blend = Blend::from_path("your_blend.blend").unwrap();
@@ -37,7 +35,7 @@ pub enum PointerSize {
 
 impl PointerSize {
     /// Returns the pointer size in bytes
-    pub fn bytes_num(&self) -> usize {
+    pub fn bytes_num(self) -> usize {
         match self {
             PointerSize::Bits32 => 4,
             PointerSize::Bits64 => 8,
@@ -45,7 +43,8 @@ impl PointerSize {
     }
 }
 
-/// Numbers and other multi-byte data can be little endian or big endian
+/// Data can be little endian or big endian depending on the computer
+/// used to save the file.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Endianness {
     LittleEndian,
@@ -104,14 +103,12 @@ impl Debug for Block {
 
 /// Returned whenever the .blend file can't be parsed.
 #[derive(Debug)]
-pub enum BlendParseError {
+pub enum BlendError {
     Io(io::Error),
-    /// There are many things that can go wrong when parsing a .blend file, though it is hard to imagine
-    /// a use case where you need to know specifically what went wrong, only a single error is provided then.
     InvalidData,
 }
 
-/// The loaded .blend file.
+/// The loaded .blend file contains the file's header information and a list of blocks.
 #[derive(Debug)]
 pub struct Blend {
     pub header: Header,
@@ -120,10 +117,9 @@ pub struct Blend {
 
 impl Blend {
     /// Returns a new `Blend` instance from `data`.
-    pub fn new<T: Read>(mut data: T) -> Result<Self, BlendParseError> {
+    pub fn from_data<T: Read>(mut data: T) -> Result<Self, BlendError> {
         let mut buffer = Vec::new();
-        data.read_to_end(&mut buffer)
-            .map_err(|e| BlendParseError::Io(e))?;
+        data.read_to_end(&mut buffer).map_err(BlendError::Io)?;
 
         let parser = parser::BlendParseContext::default();
 
@@ -131,21 +127,15 @@ impl Blend {
 
         match res {
             (_, Ok((_, blend))) => Ok(blend),
-            (_, Err(_)) => Err(BlendParseError::InvalidData),
+            (_, Err(_)) => Err(BlendError::InvalidData),
         }
     }
 
     /// Returns a new `Blend` instance from a path.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, BlendParseError> {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, BlendError> {
         use std::fs::File;
-        use std::io::{Cursor, Read};
 
-        let mut file = File::open(path).map_err(|e| BlendParseError::Io(e))?;
-
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
-            .map_err(|e| BlendParseError::Io(e))?;
-
-        Blend::new(Cursor::new(buffer))
+        let file = File::open(path).map_err(BlendError::Io)?;
+        Blend::from_data(file)
     }
 }

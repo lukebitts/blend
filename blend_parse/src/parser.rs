@@ -20,7 +20,7 @@ named!(endianness < &[u8], Endianness >,
 
 fn version(i:&[u8]) -> IResult<&[u8], [u8;3]>{
     if i.len() < 3 {
-        Err(Err::Incomplete(Needed::Size(3)))
+        Err(Err::Incomplete(Needed::Size(3-i.len())))
     } else {
         Ok((&i[3..], [i[0], i[1], i[2]]))  
     }
@@ -38,7 +38,7 @@ named!(header < &[u8], Header >,
 
 fn block_header_code(i:&[u8]) -> IResult<&[u8], [u8;4]>{
     if i.len() < 4 {
-        Err(Err::Incomplete(Needed::Size(4)))
+        Err(Err::Incomplete(Needed::Size(4-i.len())))
     } else {
         Ok((&i[4..], [i[0], i[1], i[2], i[3]]))  
     }
@@ -67,15 +67,15 @@ impl BlendParseContext {
         };
 
         if i.len() < read_len {
-            (self, Err(Err::Incomplete(Needed::Size(read_len))))
+            (self, Err(Err::Incomplete(Needed::Size(read_len-i.len()))))
         } else {
             match (self.pointer_size, self.endianness) {
                 (PointerSize::Bits32, Endianness::LittleEndian) => 
-                    (self, le_u32(i).map(|(u, n)| (u, n as u64))),
+                    (self, le_u32(i).map(|(u, n)| (u, u64::from(n)))),
                 (PointerSize::Bits64, Endianness::LittleEndian) => 
                     (self, le_u64(i)),
                 (PointerSize::Bits32, Endianness::BigEndian) => 
-                    (self, be_u32(i).map(|(u, n)| (u, n as u64))),
+                    (self, be_u32(i).map(|(u, n)| (u, u64::from(n)))),
                 (PointerSize::Bits64, Endianness::BigEndian) =>  
                     (self, be_u64(i)),
             }

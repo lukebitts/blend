@@ -1,11 +1,11 @@
-use blend_parse::{Blend as ParsedBlend, Block, Endianness, PointerSize};
-use blend_sdna::Dna;
-use field_parser::FieldInfo;
-use linked_hash_map::LinkedHashMap as HashMap;
-use primitive_parsers::{
+use crate::field_parser::FieldInfo;
+use crate::primitive_parsers::{
     parse_f32, parse_f64, parse_i16, parse_i32, parse_i64, parse_i8, parse_u16, parse_u32,
     parse_u64, parse_u8,
 };
+use blend_parse::{Blend as ParsedBlend, Block, Endianness, PointerSize};
+use blend_sdna::Dna;
+use linked_hash_map::LinkedHashMap as HashMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -178,7 +178,15 @@ macro_rules! field_convert (
 );
 
 impl BlendPrimitive {
-    pub fn from_template(template: &FieldTemplate, endianness: Endianness, data: &[u8]) -> Self {
+    // todo: this function has to convert 11 primitive types, currently it uses a match and
+    // does something different for each primitive which results in a cyclomatic complexity
+    // of 30 according to clippy, but I'm not sure there's a way to fix this
+    #[allow(clippy::cyclomatic_complexity)]
+    pub(crate) fn from_template(
+        template: &FieldTemplate,
+        endianness: Endianness,
+        data: &[u8],
+    ) -> Self {
         if !template.is_primitive || template.is_pointer() {
             panic!("can't create primitive from non-primtive and/or pointer template");
         }
@@ -274,9 +282,7 @@ pub enum PointerInfo {
     Invalid,
     Null,
     Address(u64, FieldInfo),
-    PointerToStruct,
     PointerToFunction,
-    PointerToPointer,
 }
 
 impl PointerInfo {
@@ -301,7 +307,7 @@ impl PointerInfo {
         assert_eq!(field_data.len(), pointer_size.bytes_num() * count);
 
         let addr = match pointer_size {
-            PointerSize::Bits32 => parse_u32(field_data, endianness) as u64,
+            PointerSize::Bits32 => u64::from(parse_u32(field_data, endianness)),
             PointerSize::Bits64 => parse_u64(field_data, endianness),
         };
 
@@ -312,8 +318,7 @@ impl PointerInfo {
                     PointerInfo::Null
                 } else if all_blocks
                     .iter()
-                    .filter(|b| b.header.old_memory_address == addr)
-                    .next()
+                    .find(|b| b.header.old_memory_address == addr)
                     .is_none()
                 {
                     PointerInfo::Invalid
@@ -355,7 +360,11 @@ pub struct StructInstance {
 }
 
 impl StructInstance {
-    pub fn to_string(&self, tab_count: usize) -> String {
+    pub fn to_string(&self) -> String {
+        self.to_string_with_pad(0)
+    }
+
+    fn to_string_with_pad(&self, tab_count: usize) -> String {
         let tabs = ::std::iter::repeat("\t")
             .take(tab_count)
             .collect::<String>();
@@ -369,7 +378,7 @@ impl StructInstance {
                 if show_addr {
                     format!("{} ({}) {{\n", self.type_name, addr)
                 } else {
-                    format!("{{\n")
+                    "{{\n".to_string()
                 }
             } else {
                 format!("{} {{\n", self.type_name)
@@ -389,7 +398,7 @@ impl StructInstance {
                                     old_memory_address: None,
                                     data: StructData::Single(instance.clone()),
                                 }
-                                .to_string(tab_count + 1),
+                                .to_string_with_pad(tab_count + 1),
                             )[..],
                         );
                     }
@@ -439,11 +448,13 @@ impl StructInstance {
     }
 }
 
-pub fn data_to_struct(
+// there isn't much we can do here to decrease the number of arguments,
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn data_to_struct(
     instance_structs: &mut HashMap<u64, Rc<StructInstance>>,
     seen_addresses: &mut ::std::collections::HashSet<u64>,
     templates: &HashMap<u16, Vec<FieldTemplate>>,
-    struct_template: &Vec<FieldTemplate>,
+    struct_template: &[FieldTemplate],
     struct_type_index: usize,
     blend: &ParsedBlend,
     dna: &Dna,
@@ -496,9 +507,6 @@ pub fn data_to_struct(
                 PointerInfo::PointerToFunction => {
                     instance_fields.insert(field.name.clone(), FieldInstance::Pointer(info));
                 }
-                PointerInfo::PointerToStruct | PointerInfo::PointerToPointer => {
-                    panic!("no pointer should have this type yet")
-                }
                 PointerInfo::Address(addr, field_info) => {
                     if seen_addresses.contains(addr) {
                         instance_fields.insert(field.name.clone(), FieldInstance::Pointer(info));
@@ -513,8 +521,7 @@ pub fn data_to_struct(
                             let block = blend
                                 .blocks
                                 .iter()
-                                .filter(|b| b.header.old_memory_address == *addr)
-                                .next()
+                                .find(|b| b.header.old_memory_address == *addr)
                                 .unwrap();
 
                             if block.header.code[2..=3] == [0, 0] {
@@ -528,7 +535,7 @@ pub fn data_to_struct(
                                     // We don't have enough type information to parse this block. As far as I
                                     // understand this means this is a primitive array. We don't know which
                                     // primitive type though, since the field.type_index doesn't carry
-                                    // this information, being always set to 0. The user has to decide the type
+                                    // this information, and is always set to 0. The user has to decide the type
                                     // when accessing this.
 
                                     instance_structs.insert(
@@ -553,14 +560,12 @@ pub fn data_to_struct(
                                 let (struct_type_index, _) =
                                     &dna.structs[block.header.sdna_index as usize];
                                 (*struct_type_index, &templates[struct_type_index])
+                            } else if let Some(template) = templates.get(&field.type_index) {
+                                (field.type_index, template)
                             } else {
-                                if let Some(template) = templates.get(&field.type_index) {
-                                    (field.type_index, template)
-                                } else {
-                                    let (struct_type_index, _) =
-                                        &dna.structs[block.header.sdna_index as usize];
-                                    (field.type_index, &templates[&struct_type_index])
-                                }
+                                let (struct_type_index, _) =
+                                    &dna.structs[block.header.sdna_index as usize];
+                                (field.type_index, &templates[&struct_type_index])
                             };
 
                             let instance = block_to_struct(
@@ -586,8 +591,7 @@ pub fn data_to_struct(
                             let block = blend
                                 .blocks
                                 .iter()
-                                .filter(|b| b.header.old_memory_address == *addr)
-                                .next()
+                                .find(|b| b.header.old_memory_address == *addr)
                                 .unwrap();
 
                             let ptr_size = blend.header.pointer_size.bytes_num();
@@ -606,9 +610,7 @@ pub fn data_to_struct(
                                 let block_exists = blend
                                     .blocks
                                     .iter()
-                                    .filter(|b| b.header.old_memory_address == addr)
-                                    .next()
-                                    .is_some();
+                                    .any(|b| b.header.old_memory_address == addr);
 
                                 if !block_exists {
                                     pointers.push(PointerInfo::Invalid);
@@ -642,13 +644,16 @@ pub fn data_to_struct(
     }
 }
 
-pub fn block_to_struct(
+// todo: some redundant data can be removed from the parameters, the block parameter
+// already has the old_memory_address and code, for example
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn block_to_struct(
     instance_structs: &mut HashMap<u64, Rc<StructInstance>>,
     seen_addresses: &mut ::std::collections::HashSet<u64>,
     templates: &HashMap<u16, Vec<FieldTemplate>>,
     old_memory_address: Option<u64>,
     code: Option<[u8; 2]>,
-    struct_template: &Vec<FieldTemplate>,
+    struct_template: &[FieldTemplate],
     struct_type_index: usize,
     blend: &ParsedBlend,
     dna: &Dna,

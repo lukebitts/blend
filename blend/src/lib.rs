@@ -1,37 +1,32 @@
-#![feature(never_type, concat_idents, nll)]
-
-extern crate blend_parse;
-extern crate blend_sdna;
-extern crate byteorder;
-extern crate num;
-#[macro_use]
-extern crate derivative;
-#[macro_use]
-extern crate nom;
-extern crate linked_hash_map;
-
 mod field_parser;
 mod primitive_parsers;
 mod struct_parser;
 
+use crate::field_parser::parse_field;
+use crate::primitive_parsers::parse_f32;
+use crate::struct_parser::{block_to_struct, FieldTemplate};
 use blend_parse::Blend as ParsedBlend;
 use blend_sdna::Dna;
-use field_parser::{parse_field, FieldInfo};
+use derivative::Derivative;
 use linked_hash_map::LinkedHashMap as HashMap;
-use primitive_parsers::parse_f32;
 use std::io::Read;
 use std::path::Path;
 use std::rc::Rc;
-use struct_parser::{
-    block_to_struct, BlendPrimitive, FieldInstance, FieldTemplate, PointerInfo, StructData,
-    StructInstance,
+
+pub use crate::field_parser::FieldInfo;
+pub use crate::struct_parser::{
+    BlendPrimitive, FieldInstance, PointerInfo, StructData, StructInstance, StructInstanceData,
 };
 
 pub struct Blend {
+    /// `ParsedBlend` is an alias for the raw .blend file parsed by [blend_parse](todo:add_link).
+    /// It contains the header and file-blocks of the .blend file.
     pub blend: ParsedBlend,
+    /// This contains every file-block parsed as their correct type according to the DNA block.
     pub instance_structs: HashMap<u64, Rc<StructInstance>>,
 }
 
+/// An instance of a struct.
 #[derive(Derivative)]
 #[derivative(Debug, Clone)]
 pub struct Instance<'a> {
@@ -41,6 +36,8 @@ pub struct Instance<'a> {
 }
 
 impl<'a> Instance<'a> {
+    /// In a .blend file, some of structs have an identifying code: materials have `b"MA"` as their code,
+    /// meshs have `b"ME"` and so on. You can see a list of codes
     pub fn code(&self) -> [u8; 2] {
         self.instance.code.unwrap()
     }
@@ -195,6 +192,14 @@ impl<'a> Instance<'a> {
                         }
                         ret
                     }
+                    FieldInstance::Struct(data) => {
+                        if data.fields.contains_key("first") && data.fields.contains_key("last") {
+                            //todo: check if first and last are pointers
+                            first_last_to_vec(self.get_instance(name.as_ref()))
+                        } else {
+                            panic!()
+                        }
+                    }
                     _ => panic!(),
                 }
             }
@@ -212,16 +217,11 @@ impl<'a> Instance<'a> {
                     | FieldInstance::Pointer(PointerInfo::Invalid) => false,
                     FieldInstance::Pointer(_) => true,
                     FieldInstance::PointerList(ref pointers) => {
-                        if pointers.len() == 0
+                        !(pointers.is_empty()
                             || pointers.iter().any(|p| match p {
-                                &PointerInfo::Address(..) => false,
+                                PointerInfo::Address(..) => false,
                                 _ => true,
-                            })
-                        {
-                            false
-                        } else {
-                            true
-                        }
+                            }))
                     }
                     _ => panic!("{}: {:?}", name.as_ref(), field),
                 }
@@ -266,17 +266,17 @@ impl Blend {
         use std::fs::File;
         use std::io::{Cursor, Read};
 
-        let mut file = File::open(path).map_err(|e| BlendParseError::Io(e))?;
+        let mut file = File::open(path).expect("could not open .blend file");
 
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)
-            .map_err(|e| BlendParseError::Io(e))?;
+            .expect("could not read .blend file");
 
         Blend::new(Cursor::new(buffer))
     }
 
-    pub fn new<T: Read>(mut data: T) -> Blend {
-        let blend = ParsedBlend::new(&data[..]).unwrap();
+    pub fn new<T: Read>(data: T) -> Blend {
+        let blend = ParsedBlend::new(data).unwrap();
 
         let dna = {
             let dna_block = &blend.blocks[blend.blocks.len() - 1];
@@ -384,7 +384,7 @@ impl Blend {
 }
 
 //TODO: put this inside the get_instances
-pub fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
+fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
     if !instance.is_valid("first") {
         return Vec::new();
     }

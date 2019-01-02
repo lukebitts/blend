@@ -4,15 +4,44 @@ use std::path;
 
 fn main() {
     let base_path = path::PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let blend_path = base_path.join("examples/userpref.blend");
+    let blend_path = base_path.join("examples/simple.blend");
 
     let blend = Blend::from_path(blend_path).unwrap();
 
-    for block in blend.blocks {
-        match &block.header.code {
-            b"GLOB" => println!("GLOB {}", block.header.old_memory_address),
-            b"DATA" => println!("DATA {}", block.header.old_memory_address),
-            n => (),
-        }
+    let unique_codes: std::collections::HashSet<_> = blend
+        .blocks
+        .iter()
+        .map(|block| {
+            if block.header.code[3] == 0 {
+                String::from_utf8_lossy(&block.header.code[..2])
+            } else {
+                String::from_utf8_lossy(&block.header.code[..])
+            }
+        })
+        .collect();
+
+    println!("{:#?}", unique_codes);
+    /*
+    {
+        "TEST",
+        "SN",
+        "GLOB",
+        "LA",
+        "WM",
+        "IM",
+        "ME",
+        "DATA",
+        "WS",
+        "CA",
+        "REND",
+        "SC",
+        "MA",
+        "OB",
+        "WO",
+        "LS",
+        "GR",
+        "DNA1",
+        "BR"
     }
+    */
 }

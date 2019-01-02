@@ -1,4 +1,7 @@
-use nom;
+use nom::{
+    alt, call, complete, delimited, do_parse, error_position, many0, many1, map, named, none_of,
+    peek, tag, take_until, tuple_parser, value,
+};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum FieldInfo {
@@ -61,7 +64,7 @@ named!(pub parse_field (&str) -> (&str, FieldInfo),
         field: map!(value!((field_info, array_sizes)), |((field_name, field_info), array_sizes)| {
             match field_info {
                 FieldInfo::Value => {
-                    if array_sizes.len() == 0 {
+                    if array_sizes.is_empty() {
                         (field_name, field_info)
                     }
                     else if array_sizes.len() == 1 {
@@ -75,7 +78,7 @@ named!(pub parse_field (&str) -> (&str, FieldInfo),
                     }
                 }
                 FieldInfo::Pointer { .. } => {
-                    if array_sizes.len() == 0 {
+                    if array_sizes.is_empty() {
                         (field_name, field_info)
                     }
                     else if array_sizes.len() == 1 {
@@ -86,7 +89,7 @@ named!(pub parse_field (&str) -> (&str, FieldInfo),
                     }
                 }
                 FieldInfo::FnPointer { .. } => {
-                    assert_eq!(array_sizes.len(), 0);
+                    assert!(array_sizes.is_empty());
                     (field_name, field_info)
                 }
                 _ => panic!("invalid field info")
