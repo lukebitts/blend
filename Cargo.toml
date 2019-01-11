@@ -1,7 +1,7 @@
-#cargo-features = ["profile-overrides"]
+cargo-features = ["profile-overrides"]
 
 [workspace]
 members = ["clever", "common", "client", "server", "blend_parse", "blend_sdna", "blend"]
 
-#[profile.dev.overrides."*"]
-#opt-level = 2
+[profile.dev.overrides."*"]
+opt-level = 2

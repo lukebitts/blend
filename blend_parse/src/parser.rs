@@ -51,6 +51,8 @@ pub struct BlendParseContext {
 }
 
 impl Default for BlendParseContext {
+    //todo: BlendParseContext could be an `enum { Uninit, ParsedHeader(Endianness, PointerSize) }`
+    // this way we avoid having the `default` method return a default endianness and pointer size.
     fn default() -> Self {
         Self {
             endianness: Endianness::LittleEndian,

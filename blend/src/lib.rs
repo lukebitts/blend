@@ -194,7 +194,7 @@ impl<'a> Instance<'a> {
                     }
                     FieldInstance::Struct(data) => {
                         if data.fields.contains_key("first") && data.fields.contains_key("last") {
-                            //todo: check if first and last are pointers
+                            //todo: check if first and last are pointers, maybe if the type is ListBase, etc
                             first_last_to_vec(self.get_instance(name.as_ref()))
                         } else {
                             panic!()
@@ -276,7 +276,7 @@ impl Blend {
     }
 
     pub fn new<T: Read>(data: T) -> Blend {
-        let blend = ParsedBlend::new(data).unwrap();
+        let blend = ParsedBlend::from_data(data).unwrap();
 
         let dna = {
             let dna_block = &blend.blocks[blend.blocks.len() - 1];
@@ -383,7 +383,6 @@ impl Blend {
     }
 }
 
-//TODO: put this inside the get_instances
 fn first_last_to_vec<'a>(instance: Instance<'a>) -> Vec<Instance<'a>> {
     if !instance.is_valid("first") {
         return Vec::new();
