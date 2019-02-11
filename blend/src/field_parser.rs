@@ -74,7 +74,7 @@ named!(pub parse_field (&str) -> (&str, FieldInfo),
                         (field_name, FieldInfo::ValueArray2D { len1: array_sizes[0], len2: array_sizes[1] } )
                     }
                     else {
-                        panic!("unsuported array dimension")
+                        panic!("unsuported array dimension {}: {:?}", field_name, array_sizes);
                     }
                 }
                 FieldInfo::Pointer { .. } => {
