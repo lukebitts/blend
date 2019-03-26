@@ -8,7 +8,7 @@ pub fn main() -> Result<(), io::Error> {
         env::var_os("CARGO_MANIFEST_DIR").expect("could not find cargo manifest dir"),
     );
 
-    let blend_path = base_path.join("../assets/scenes/simple/simple_logical.blend"); //examples/print_blend/simple.blend
+    let blend_path = base_path.join("../assets/scenes/color_sketch/color.blend"); //examples/print_blend/simple.blend
     let output_path = base_path.join("examples/print_blend/output.txt");
 
     println!("{:?}", blend_path);
