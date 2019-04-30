@@ -8,6 +8,9 @@ use crate::struct_parser::{block_to_struct, FieldTemplate};
 use blend_parse::Blend as ParsedBlend;
 use blend_sdna::Dna;
 use derivative::Derivative;
+//A linked HashMap retains insertion order, we need that to keep the blend file blocks in the same
+// order as the blend file.
+// todo: maybe swap this for indexmap? Investigate more
 use linked_hash_map::LinkedHashMap as HashMap;
 use std::io::Read;
 use std::path::Path;
@@ -36,14 +39,14 @@ pub struct Instance<'a> {
 }
 
 impl<'a> Instance<'a> {
-    /// In a .blend file, some of structs have an identifying code: materials have `b"MA"` as their code,
+    /// todo: In a .blend file, some of structs have an identifying code: materials have `b"MA"` as their code,
     /// meshs have `b"ME"` and so on. You can see a list of codes
     pub fn code(&self) -> [u8; 2] {
         self.instance.code.unwrap()
     }
 
     pub fn get_i32<T: AsRef<str>>(&self, name: T) -> i32 {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
                 match field {
@@ -56,7 +59,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_f32<T: AsRef<str>>(&self, name: T) -> f32 {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
 
@@ -70,7 +73,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_string<T: AsRef<str>>(&self, name: T) -> String {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
 
@@ -88,7 +91,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_f32_array<T: AsRef<str>>(&self, name: T) -> Vec<f32> {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
 
@@ -97,7 +100,7 @@ impl<'a> Instance<'a> {
                     FieldInstance::Pointer(PointerInfo::Address(addr, _)) => {
                         let instance = &self.blend.instance_structs[addr];
 
-                        match instance.data {
+                        match *instance.data {
                             StructData::Raw(ref data) => {
                                 let f32_size = ::std::mem::size_of::<f32>();
                                 assert!(data.len() % f32_size == 0);
@@ -117,7 +120,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_i16_array<T: AsRef<str>>(&self, name: T) -> Vec<i16> {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
 
@@ -132,7 +135,7 @@ impl<'a> Instance<'a> {
 
     //TODO: rename to get_instance_vec
     pub fn get_instances<T: AsRef<str>>(&self, name: T) -> Vec<Instance<'a>> {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
                 let mut ret = Vec::new();
@@ -168,7 +171,7 @@ impl<'a> Instance<'a> {
                     FieldInstance::Pointer(PointerInfo::Address(addr, _)) => {
                         let instance = &self.blend.instance_structs[addr];
 
-                        match &instance.data {
+                        match &*instance.data {
                             StructData::List(instances) => {
                                 for data in instances {
                                     ret.push(Instance {
@@ -177,7 +180,7 @@ impl<'a> Instance<'a> {
                                             type_name: instance.type_name.clone(),
                                             code: None,
                                             old_memory_address: None,
-                                            data: StructData::Single(data.clone()),
+                                            data: Box::new(StructData::Single(data.clone())),
                                         }),
                                     });
                                 }
@@ -208,7 +211,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
 
@@ -231,7 +234,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn get_instance<T: AsRef<str>>(&self, name: T) -> Instance<'a> {
-        match &self.instance.data {
+        match &*self.instance.data {
             StructData::Single(instance) => {
                 let field = &instance.fields[name.as_ref()];
 
@@ -242,7 +245,7 @@ impl<'a> Instance<'a> {
                             type_name: data.type_name.clone(),
                             code: None,
                             old_memory_address: None,
-                            data: StructData::Single(data.clone()),
+                            data: Box::new(StructData::Single(*data.clone())),
                         }),
                     },
                     FieldInstance::Pointer(info) => match info {

@@ -179,9 +179,9 @@ macro_rules! field_convert (
 
 impl BlendPrimitive {
     // todo: this function has to convert 11 primitive types, currently it uses a match and
-    // does something different for each primitive which results in a cyclomatic complexity
-    // of 30 according to clippy, but I'm not sure there's a way to fix this
-    #[allow(clippy::cyclomatic_complexity)]
+    // does something different for each primitive which results in a high cognitive complexity
+    // according to clippy, but I'm not sure there's a way to fix this
+    #[allow(clippy::cognitive_complexity)]
     pub(crate) fn from_template(
         template: &FieldTemplate,
         endianness: Endianness,
@@ -333,7 +333,7 @@ impl PointerInfo {
 #[derive(Debug, Clone)]
 pub enum FieldInstance {
     Value(BlendPrimitive),
-    Struct(StructInstanceData),
+    Struct(Box<StructInstanceData>),
     Pointer(PointerInfo),
     PointerList(Vec<PointerInfo>),
 }
@@ -356,7 +356,7 @@ pub struct StructInstance {
     pub type_name: String,
     pub code: Option<[u8; 2]>,
     pub old_memory_address: Option<u64>,
-    pub data: StructData,
+    pub data: Box<StructData>,
 }
 
 impl StructInstance {
@@ -396,7 +396,7 @@ impl StructInstance {
                                     type_name: instance.type_name.clone(),
                                     code: None,
                                     old_memory_address: None,
-                                    data: StructData::Single(instance.clone()),
+                                    data: Box::new(StructData::Single(*instance.clone())),
                                 }
                                 .to_string_with_pad(tab_count + 1),
                             )[..],
@@ -413,7 +413,7 @@ impl StructInstance {
             ret
         };
 
-        match &self.data {
+        match &*self.data {
             StructData::Single(instance) => print_single(&instance, tab_count, true),
             StructData::List(instances) => {
                 let mut ret = String::new();
@@ -480,7 +480,7 @@ pub(crate) fn data_to_struct(
 
             instance_fields.insert(
                 field.name.clone(),
-                FieldInstance::Struct(data_to_struct(
+                FieldInstance::Struct(Box::new(data_to_struct(
                     instance_structs,
                     seen_addresses,
                     templates,
@@ -489,7 +489,7 @@ pub(crate) fn data_to_struct(
                     blend,
                     dna,
                     &data[field.data_start..field.data_start + field.data_len],
-                )),
+                ))),
             );
         } else if field.is_pointer() {
             let info = PointerInfo::from_template(
@@ -549,7 +549,7 @@ pub(crate) fn data_to_struct(
                                             old_memory_address: Some(
                                                 block.header.old_memory_address,
                                             ),
-                                            data: StructData::Raw(block.data.clone()),
+                                            data: Box::new(StructData::Raw(block.data.clone())),
                                         }),
                                     );
 
@@ -664,7 +664,7 @@ pub(crate) fn block_to_struct(
             type_name: dna.types[struct_type_index].0.clone(),
             code,
             old_memory_address,
-            data: StructData::Single(data_to_struct(
+            data: Box::new(StructData::Single(data_to_struct(
                 instance_structs,
                 seen_addresses,
                 templates,
@@ -673,7 +673,7 @@ pub(crate) fn block_to_struct(
                 blend,
                 dna,
                 &block.data[..],
-            )),
+            ))),
         }
     } else {
         let mut instances = Vec::new();
@@ -696,7 +696,7 @@ pub(crate) fn block_to_struct(
             type_name: dna.types[struct_type_index].0.clone(),
             code,
             old_memory_address,
-            data: StructData::List(instances),
+            data: Box::new(StructData::List(instances)),
         }
     }
 }

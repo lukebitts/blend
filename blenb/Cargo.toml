@@ -1,0 +1,14 @@
+[package]
+name = "blenb"
+version = "0.1.0"
+authors = ["Lucas Bittencourt (lbittencs@gmail.com)"]
+edition = "2018"
+
+[dependencies]
+blend_parse = { path="../blend_parse" }
+blend_sdna = { path="../blend_sdna" }
+num = "0.2.0"
+byteorder = "1.3.1"
+derivative = "1.0.2"
+nom = "4.2.3"
+linked-hash-map = "0.5.2"

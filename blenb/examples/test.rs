@@ -1,4 +1,4 @@
-use blend::Blend;
+use blenb::Blend;
 use std::fs::File;
 use std::io::{self, BufWriter, Read, Write};
 use std::{env, path};
@@ -18,15 +18,12 @@ pub fn main() -> Result<(), io::Error> {
     file.read_to_end(&mut data)?;
 
     let blend = Blend::new(&data[..]);
-    let mut buffer = BufWriter::new(File::create(output_path)?);
+    
+    let inst = blend.get_by_code([b'O', b'B']).next().unwrap().get("id");
 
-    for (_struct_addr, ref struct_instance) in &blend.instance_structs {
-        let instance_string: Vec<_> = struct_instance.to_string().bytes().collect();
-        buffer.write(&instance_string[..])?;
-        buffer.write(&b"\n"[..])?;
+    for (n, f) in inst.fields {
+        println!("{} {}", f.type_name, n);
     }
-
-    buffer.flush()?;
 
     Ok(())
 }
