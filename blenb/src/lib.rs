@@ -24,17 +24,62 @@ impl<'a> InstanceDataFormat<'a> {
             InstanceDataFormat::Raw(data) => &data[start..start + len],
         }
     }
+
+    fn code(&self) -> Option<[u8; 2]> {
+        match self {
+            InstanceDataFormat::Block(block) => Some([block.header.code[0], block.header.code[1]]),
+            InstanceDataFormat::Raw(_) => None,
+        }
+    }
 }
 
 pub struct Instance<'a> {
     dna: &'a Dna,
-    blend_header: &'a BlendHeader,
+    blend: &'a ParsedBlend,
     data: InstanceDataFormat<'a>,
     //We use a LinkedHashMap here because we want to preserve insertion order
     pub fields: LinkedHashMap<String, FieldTemplate>,
 }
 
 impl<'a> Instance<'a> {
+    pub fn code(&self) -> [u8; 2] {
+        self.data.code().expect("instance doesn't have a code")
+    }
+
+    pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
+        let name = name.as_ref();
+        let field = &self
+            .fields
+            .get(name)
+            .unwrap_or_else(|| panic!("invalid field '{}'", name));
+
+        match field.info {
+            FieldInfo::Pointer{ indirection_count } => {
+                if indirection_count > 1 {
+                    panic!("unsupported pointer indirection count on field '{}'", name);
+                }
+
+                assert_eq!(
+                    field.data_len,
+                    size_of::<u64>(),
+                    "field '{}' doesn't have enough data for a pointer address",
+                    name
+                );
+
+                let address = parse_u64(&self.data.get(field.data_start, field.data_len), self.blend.header.endianness);
+
+                if address == 0 {
+                    false
+                } else if !self.blend.blocks.iter().any(|b| b.header.old_memory_address == address) {
+                    false
+                } else {
+                    true
+                }
+            }
+            _ => panic!("Instance::is_valid should be used only for pointers, field '{}' is not a pointer", name)
+        }
+    }
+
     pub fn get_f32<T: AsRef<str>>(&self, name: T) -> f32 {
         let name = name.as_ref();
         let field = &self
@@ -43,7 +88,7 @@ impl<'a> Instance<'a> {
             .unwrap_or_else(|| panic!("invalid field '{}'", name));
 
         match field.info {
-            FieldInfo::Value if field.type_name == "float" => {
+            FieldInfo::Value if field.is_primitive && field.type_name == "float" => {
                 assert_eq!(
                     field.data_len,
                     size_of::<f32>(),
@@ -53,10 +98,110 @@ impl<'a> Instance<'a> {
 
                 parse_f32(
                     &self.data.get(field.data_start, field.data_len),
-                    self.blend_header.endianness,
+                    self.blend.header.endianness,
                 )
             }
             _ => panic!("field '{}' is not f32", name),
+        }
+    }
+
+    pub fn get_f32_array<T: AsRef<str>>(&self, name: T) -> Vec<f32> {
+        let name = name.as_ref();
+        let field = &self
+            .fields
+            .get(name)
+            .unwrap_or_else(|| panic!("invalid field '{}'", name));
+
+        match field.info {
+            FieldInfo::ValueArray1D { len } if field.is_primitive => {
+                assert_eq!(
+                    field.data_len / len,
+                    size_of::<f32>(),
+                    "field '{}' doesn't have enough data for a f32 array",
+                    name
+                );
+
+                return self.data.get(field.data_start, field.data_len)
+                    .chunks(size_of::<f32>())
+                    .map(|data| parse_f32(data, self.blend.header.endianness))
+                    .collect()
+            }
+            _ => panic!("field '{}' is not a f32 array")
+        }
+    }
+
+    pub fn get_i32<T: AsRef<str>>(&self, name: T) -> i32 {
+        let name = name.as_ref();
+        let field = &self
+            .fields
+            .get(name)
+            .unwrap_or_else(|| panic!("invalid field '{}'", name));
+
+        match field.info {
+            FieldInfo::Value if field.is_primitive && field.type_name == "int" => {
+                assert_eq!(
+                    field.data_len,
+                    size_of::<i32>(),
+                    "field '{}' doesn't have enough data for a i32",
+                    name
+                );
+
+                parse_i32(
+                    &self.data.get(field.data_start, field.data_len),
+                    self.blend.header.endianness,
+                )
+            }
+            _ => panic!("field '{}' is not i32", name),
+        }
+    }
+
+    pub fn get_i16_array<T: AsRef<str>>(&self, name: T) -> Vec<i16> {
+        let name = name.as_ref();
+        let field = &self
+            .fields
+            .get(name)
+            .unwrap_or_else(|| panic!("invalid field '{}'", name));
+
+        match field.info {
+            FieldInfo::ValueArray1D { len } if field.is_primitive => {
+                assert_eq!(
+                    field.data_len / len,
+                    size_of::<i16>(),
+                    "field '{}' doesn't have enough data for a i16 array",
+                    name
+                );
+
+                return self.data.get(field.data_start, field.data_len)
+                    .chunks(size_of::<i16>())
+                    .map(|data| parse_i16(data, self.blend.header.endianness))
+                    .collect()
+            }
+            _ => panic!("field '{}' is not a i16 array")
+        }
+    }
+
+    pub fn get_string<T: AsRef<str>>(&self, name: T) -> String {
+        let name = name.as_ref();
+        let field = &self
+            .fields
+            .get(name)
+            .unwrap_or_else(|| panic!("invalid field '{}'", name));
+
+        match field.info {
+            FieldInfo::Value | FieldInfo::ValueArray1D{ .. } => {
+                if !field.is_primitive || field.type_name != "char" 
+                {
+                    panic!("field '{}' is not a primitive or has the wrong type", name)
+                }
+                
+                let data = &self.data.get(field.data_start, field.data_len);
+                return data
+                    .iter()
+                    .take_while(|c| **c != 0)
+                    .map(|c| *c as u8 as char)
+                    .collect()
+            }
+            _ => panic!("field '{}' is not a string", name)
         }
     }
 
@@ -84,11 +229,11 @@ impl<'a> Instance<'a> {
                     });
                 let r#type = &self.dna.types[r#struct.0 as usize];
 
-                let fields = generate_fields(r#struct, r#type, self.dna, self.blend_header);
+                let fields = generate_fields(r#struct, r#type, self.dna, &self.blend.header);
 
                 Instance {
                     dna: self.dna,
-                    blend_header: self.blend_header,
+                    blend: self.blend,
                     data: InstanceDataFormat::Raw(self.data.get(field.data_start, field.data_len)),
                     fields,
                 }
@@ -104,6 +249,7 @@ impl<'a> Instance<'a> {
             .get(name)
             .unwrap_or_else(|| panic!("invalid field '{}'", name));
 
+        unimplemented!();
         vec![].into_iter()
     }
 }
@@ -118,7 +264,7 @@ pub struct Blend {
 impl Blend {
     pub fn from_path<T: AsRef<Path>>(path: T) -> Blend {
         use std::fs::File;
-        use std::io::{Cursor, Read};
+        use std::io::{Cursor};
 
         let mut file = File::open(path).expect("could not open .blend file");
 
@@ -149,7 +295,7 @@ impl Blend {
         self.blend
             .blocks
             .iter()
-            .filter(|block| block.header.code[..2] == code[..])
+            .filter(|block| block.header.code[..2] == [code[0], code[1]])
             .map(|block| {
                 //
                 assert!(block.header.count == 1);
@@ -161,7 +307,7 @@ impl Blend {
 
                 Instance {
                     dna: &self.dna,
-                    blend_header: &self.blend.header,
+                    blend: &self.blend,
                     data: InstanceDataFormat::Block(block),
                     fields,
                 }
@@ -179,8 +325,6 @@ fn generate_fields(
 ) -> LinkedHashMap<String, FieldTemplate> {
     let (struct_type_index, struct_fields) = r#struct;
     let (_struct_type_name, struct_type_bytes_len) = r#type;
-
-    println!("{:?} -- {:?}", r#struct, r#type);
 
     let mut fields = LinkedHashMap::new();
     let mut data_start = 0;
