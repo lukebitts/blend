@@ -1,6 +1,6 @@
 use crate::field_parser::FieldInfo;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FieldTemplate {
     //pub name: String,
     pub info: FieldInfo,

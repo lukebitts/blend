@@ -4,7 +4,7 @@ mod struct_parser;
 
 use crate::field_parser::{parse_field, FieldInfo};
 use crate::struct_parser::FieldTemplate;
-use blend_parse::{Blend as ParsedBlend, Block, Header as BlendHeader};
+use blend_parse::{Blend as ParsedBlend, Block, Header as BlendHeader, PointerSize};
 use blend_sdna::Dna;
 use linked_hash_map::LinkedHashMap;
 use primitive_parsers::*;
@@ -12,6 +12,7 @@ use std::io::Read;
 use std::mem::size_of;
 use std::path::Path;
 
+#[derive(Clone)]
 pub enum InstanceDataFormat<'a> {
     Block(&'a Block),
     Raw(&'a [u8]),
@@ -31,8 +32,16 @@ impl<'a> InstanceDataFormat<'a> {
             InstanceDataFormat::Raw(_) => None,
         }
     }
+
+    fn old_memory_address(&self) -> Option<u64> {
+        match self {
+            InstanceDataFormat::Block(block) => Some(block.header.old_memory_address),
+            InstanceDataFormat::Raw(_) => None,
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct Instance<'a> {
     dna: &'a Dna,
     blend: &'a ParsedBlend,
@@ -46,6 +55,20 @@ impl<'a> Instance<'a> {
         self.data.code().expect("instance doesn't have a code")
     }
 
+    //Should only be called for FieldTemplates which are pointers
+    fn get_ptr(&self, field: &FieldTemplate) -> u64 {
+        match self.blend.header.pointer_size {
+            PointerSize::Bits32 => parse_u32(
+                &self.data.get(field.data_start, field.data_len),
+                self.blend.header.endianness,
+            ) as u64,
+            PointerSize::Bits64 => parse_u64(
+                &self.data.get(field.data_start, field.data_len),
+                self.blend.header.endianness,
+            ),
+        }
+    }
+
     pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
         let name = name.as_ref();
         let field = &self
@@ -54,11 +77,7 @@ impl<'a> Instance<'a> {
             .unwrap_or_else(|| panic!("invalid field '{}'", name));
 
         match field.info {
-            FieldInfo::Pointer{ indirection_count } => {
-                if indirection_count > 1 {
-                    panic!("unsupported pointer indirection count on field '{}'", name);
-                }
-
+            FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
                 assert_eq!(
                     field.data_len,
                     size_of::<u64>(),
@@ -66,17 +85,59 @@ impl<'a> Instance<'a> {
                     name
                 );
 
-                let address = parse_u64(&self.data.get(field.data_start, field.data_len), self.blend.header.endianness);
+                let address = self.get_ptr(field);
 
                 if address == 0 {
                     false
-                } else if !self.blend.blocks.iter().any(|b| b.header.old_memory_address == address) {
+                } else if !self
+                    .blend
+                    .blocks
+                    .iter()
+                    .any(|b| b.header.old_memory_address == address)
+                {
                     false
                 } else {
                     true
                 }
             }
-            _ => panic!("Instance::is_valid should be used only for pointers, field '{}' is not a pointer", name)
+            FieldInfo::Pointer { indirection_count } if indirection_count == 2 => {
+                let address = self.get_ptr(&field);
+                let block = match self
+                    .blend
+                    .blocks
+                    .iter()
+                    .find(|b| b.header.old_memory_address == address)
+                {
+                    Some(block) => block,
+                    None => return false,
+                };
+
+                let ptr_size = self.blend.header.pointer_size.bytes_num();
+                let pointer_count = block.data.len() / ptr_size;
+
+                for i in 0..pointer_count {
+                    let address =
+                        parse_u64(&block.data[i * ptr_size..], self.blend.header.endianness);
+
+                    if address == 0 {
+                        return false;
+                    } else if !self
+                        .blend
+                        .blocks
+                        .iter()
+                        .any(|b| b.header.old_memory_address == address)
+                    {
+                        return false;
+                    } else {
+                        continue;
+                    }
+                }
+                true
+            }
+            _ => panic!(
+                "Instance::is_valid should be used only for pointers, field '{}' is not a pointer",
+                name
+            ),
         }
     }
 
@@ -121,12 +182,34 @@ impl<'a> Instance<'a> {
                     name
                 );
 
-                return self.data.get(field.data_start, field.data_len)
+                return self
+                    .data
+                    .get(field.data_start, field.data_len)
                     .chunks(size_of::<f32>())
                     .map(|data| parse_f32(data, self.blend.header.endianness))
+                    .collect();
+            }
+            FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
+                println!("{:?}", field);
+
+                let address = self.get_ptr(&field);
+                let block = self
+                    .blend
+                    .blocks
+                    .iter()
+                    .find(|b| b.header.old_memory_address == address)
+                    .expect("invalid block address");
+
+                let f32_size = size_of::<f32>();
+                assert!(block.data.len() % f32_size == 0);
+
+                block
+                    .data
+                    .chunks(f32_size)
+                    .map(|s| parse_f32(s, self.blend.header.endianness))
                     .collect()
             }
-            _ => panic!("field '{}' is not a f32 array")
+            _ => panic!("field '{}' is not a f32 array ({:?})", name, field),
         }
     }
 
@@ -171,12 +254,14 @@ impl<'a> Instance<'a> {
                     name
                 );
 
-                return self.data.get(field.data_start, field.data_len)
+                return self
+                    .data
+                    .get(field.data_start, field.data_len)
                     .chunks(size_of::<i16>())
                     .map(|data| parse_i16(data, self.blend.header.endianness))
-                    .collect()
+                    .collect();
             }
-            _ => panic!("field '{}' is not a i16 array")
+            _ => panic!("field '{}' is not a i16 array"),
         }
     }
 
@@ -188,20 +273,19 @@ impl<'a> Instance<'a> {
             .unwrap_or_else(|| panic!("invalid field '{}'", name));
 
         match field.info {
-            FieldInfo::Value | FieldInfo::ValueArray1D{ .. } => {
-                if !field.is_primitive || field.type_name != "char" 
-                {
+            FieldInfo::Value | FieldInfo::ValueArray1D { .. } => {
+                if !field.is_primitive || field.type_name != "char" {
                     panic!("field '{}' is not a primitive or has the wrong type", name)
                 }
-                
+
                 let data = &self.data.get(field.data_start, field.data_len);
                 return data
                     .iter()
                     .take_while(|c| **c != 0)
                     .map(|c| *c as u8 as char)
-                    .collect()
+                    .collect();
             }
-            _ => panic!("field '{}' is not a string", name)
+            _ => panic!("field '{}' is not a string", name),
         }
     }
 
@@ -212,13 +296,15 @@ impl<'a> Instance<'a> {
             .get(name)
             .unwrap_or_else(|| panic!("invalid field '{}'", name));
 
-        if field.is_primitive {
-            panic!("cannot access field '{}' as a struct, as it is a primitive")
-        }
-
         match field.info {
             FieldInfo::Value => {
-                //
+                if field.is_primitive {
+                    panic!(
+                        "cannot access field '{}' as a struct, as it is a primitive",
+                        name
+                    )
+                }
+
                 let r#struct = &self
                     .dna
                     .structs
@@ -238,6 +324,37 @@ impl<'a> Instance<'a> {
                     fields,
                 }
             }
+            FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
+                if !self.is_valid(name) {
+                    panic!("field '{}' is null or doesn't point to a valid block", name);
+                }
+
+                let address = self.get_ptr(&field);
+                let block = self
+                    .blend
+                    .blocks
+                    .iter()
+                    .find(|b| b.header.old_memory_address == address)
+                    .expect("invalid block address");
+
+                assert!(
+                    block.header.count == 1,
+                    "field '{}' is a list of structs, use get_instances to access",
+                    name
+                );
+
+                let r#struct = &self.dna.structs[block.header.sdna_index as usize];
+                let r#type = &self.dna.types[r#struct.0 as usize];
+
+                let fields = generate_fields(r#struct, r#type, &self.dna, &self.blend.header);
+
+                Instance {
+                    dna: &self.dna,
+                    blend: &self.blend,
+                    data: InstanceDataFormat::Block(block),
+                    fields,
+                }
+            }
             _ => panic!("field '{}' is not a valid struct ({:?})", name, field),
         }
     }
@@ -249,8 +366,125 @@ impl<'a> Instance<'a> {
             .get(name)
             .unwrap_or_else(|| panic!("invalid field '{}'", name));
 
-        unimplemented!();
-        vec![].into_iter()
+        match field.info {
+            FieldInfo::Value => {
+                if field.type_name != "ListBase" {
+                    panic!("")
+                }
+
+                let list_instance = self.get_instance(name);
+
+                let last = list_instance.get_instance("last");
+                let mut cur = list_instance.get_instance("first");
+                let mut instances = Vec::new();
+
+                loop {
+                    instances.push(cur.clone());
+
+                    if cur.data.old_memory_address().unwrap()
+                        == last.data.old_memory_address().unwrap()
+                    {
+                        break;
+                    }
+
+                    cur = cur.get_instance("next");
+                }
+
+                //todo: stop hijacking the vector iterator implementation
+                instances.into_iter()
+            }
+            FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
+                let address = self.get_ptr(&field);
+                let block = self
+                    .blend
+                    .blocks
+                    .iter()
+                    .find(|b| b.header.old_memory_address == address)
+                    .expect("invalid block address");
+
+                let r#struct = &self.dna.structs[block.header.sdna_index as usize];
+                let r#type = &self.dna.types[r#struct.0 as usize];
+
+                let fields = generate_fields(r#struct, r#type, &self.dna, &self.blend.header);
+
+                let mut instances = Vec::new();
+                for i in 0..block.header.count as usize {
+                    let data_len = (block.header.size / block.header.count) as usize;
+                    let data_start = i * data_len;
+
+                    instances.push(Instance {
+                        dna: &self.dna,
+                        blend: &self.blend,
+                        data: InstanceDataFormat::Raw(
+                            &block.data[data_start..data_start + data_len],
+                        ),
+                        fields: fields.clone(),
+                    });
+                }
+
+                instances.into_iter()
+            }
+            FieldInfo::Pointer { indirection_count } if indirection_count == 2 => {
+                let address = self.get_ptr(&field);
+                let block = self
+                    .blend
+                    .blocks
+                    .iter()
+                    .find(|b| b.header.old_memory_address == address)
+                    .expect("invalid block address");
+
+                let ptr_size = self.blend.header.pointer_size.bytes_num();
+                let pointer_count = block.data.len() / ptr_size;
+
+                let mut pointers = Vec::new();
+                for i in 0..pointer_count {
+                    let address =
+                        parse_u64(&block.data[i * ptr_size..], self.blend.header.endianness);
+
+                    if address == 0 {
+                        panic!(
+                            "null pointer exception on get_instances, field {} '{:?}'",
+                            name, field
+                        );
+                    }
+
+                    let block = self
+                        .blend
+                        .blocks
+                        .iter()
+                        .find(|b| b.header.old_memory_address == address);
+
+                    match block {
+                        Some(block) => {
+                            let r#struct = &self.dna.structs[block.header.sdna_index as usize];
+                            let r#type = &self.dna.types[r#struct.0 as usize];
+
+                            let fields =
+                                generate_fields(r#struct, r#type, &self.dna, &self.blend.header);
+
+                            pointers.push(Instance {
+                                dna: &self.dna,
+                                blend: &self.blend,
+                                data: InstanceDataFormat::Block(block),
+                                fields,
+                            });
+                        }
+                        None => {
+                            panic!(
+                                "invalid pointers on get_instances, field {} '{:?}'",
+                                name, field
+                            );
+                        }
+                    }
+                }
+
+                pointers.into_iter()
+            }
+            _ => panic!(
+                "field '{}' cannot be read as a list of structs ({:?})",
+                name, field
+            ),
+        }
     }
 }
 
@@ -264,7 +498,7 @@ pub struct Blend {
 impl Blend {
     pub fn from_path<T: AsRef<Path>>(path: T) -> Blend {
         use std::fs::File;
-        use std::io::{Cursor};
+        use std::io::Cursor;
 
         let mut file = File::open(path).expect("could not open .blend file");
 
@@ -298,7 +532,10 @@ impl Blend {
             .filter(|block| block.header.code[..2] == [code[0], code[1]])
             .map(|block| {
                 //
-                assert!(block.header.count == 1);
+                assert!(
+                    block.header.count == 1,
+                    "blocks with a 2 letter code are assumed to not be lists"
+                );
 
                 let r#struct = &self.dna.structs[block.header.sdna_index as usize];
                 let r#type = &self.dna.types[r#struct.0 as usize];
@@ -323,7 +560,7 @@ fn generate_fields(
     dna: &Dna,
     header: &BlendHeader,
 ) -> LinkedHashMap<String, FieldTemplate> {
-    let (struct_type_index, struct_fields) = r#struct;
+    let (_struct_type_index, struct_fields) = r#struct;
     let (_struct_type_name, struct_type_bytes_len) = r#type;
 
     let mut fields = LinkedHashMap::new();
@@ -363,3 +600,4 @@ fn generate_fields(
 
     fields
 }
+

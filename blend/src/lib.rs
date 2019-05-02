@@ -267,7 +267,7 @@ impl<'a> Instance<'a> {
 impl Blend {
     pub fn from_path<T: AsRef<Path>>(path: T) -> Blend {
         use std::fs::File;
-        use std::io::{Cursor, Read};
+        use std::io::Cursor;
 
         let mut file = File::open(path).expect("could not open .blend file");
 

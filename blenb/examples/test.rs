@@ -18,11 +18,26 @@ pub fn main() -> Result<(), io::Error> {
     file.read_to_end(&mut data)?;
 
     let blend = Blend::new(&data[..]);
-    
-    let inst = blend.get_by_code([b'O', b'B']).next().unwrap().get("id");
 
-    for (n, f) in inst.fields {
-        println!("{} {}", f.type_name, n);
+    let inst = blend
+        .get_by_code([b'M', b'A'])
+        .filter_map(|inst| {
+            if inst.is_valid("nodetree") {
+                Some(inst)
+            } else {
+                None
+            }
+        })
+        .next()
+        .unwrap()
+        .get_instances("nodetree");
+
+
+    for inst in inst {
+        let nodes = inst.get_instance("nodes");
+        for (n, f) in nodes.fields {
+            println!("{} {}", f.type_name, n);
+        }
     }
 
     Ok(())
