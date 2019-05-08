@@ -36,11 +36,8 @@
 //! }
 //! ```
 
-extern crate blend_parse;
-#[macro_use]
-extern crate nom;
-
-use blend_parse::{Endianness, PointerSize, Block};
+use crate::parser::{Endianness, PointerSize, Block};
+use nom::{method, do_parse, count, tag, terminated, value, map, take_while, u16, u32, take, call_m};
 
 #[derive(Debug)]
 pub enum SdnaParseError {

@@ -1,4 +1,4 @@
-use crate::field_parser::FieldInfo;
+use crate::parser::field_parser::FieldInfo;
 
 #[derive(Debug, Clone)]
 pub struct FieldTemplate {

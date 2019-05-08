@@ -30,11 +30,11 @@ pub fn main() -> Result<(), io::Error> {
         })
         .next()
         .unwrap()
-        .get_instances("nodetree");
+        .get_vec("nodetree");
 
 
     for inst in inst {
-        let nodes = inst.get_instance("nodes");
+        let nodes = inst.get("nodes");
         for (n, f) in nodes.fields {
             println!("{} {}", f.type_name, n);
         }

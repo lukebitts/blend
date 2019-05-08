@@ -8,6 +8,7 @@ pub enum FieldInfo {
     Value,
     ValueArray1D { len: usize },
     ValueArray2D { len1: usize, len2: usize },
+    ValueArrayND { len1d: usize, len: Vec<usize> },
     Pointer { indirection_count: usize },
     PointerArray1D { len: usize },
     FnPointer,
@@ -74,11 +75,8 @@ named!(pub parse_field (&str) -> (&str, FieldInfo),
                         (field_name, FieldInfo::ValueArray2D { len1: array_sizes[0], len2: array_sizes[1] } )
                     }
                     else {
-                        //todo: remove
-                        println!("unsuported array dimension {}: {:?}", field_name, array_sizes);
-
                         let size = array_sizes.iter().product();
-                        (field_name, FieldInfo::ValueArray1D { len: size } )
+                        (field_name, FieldInfo::ValueArrayND { len1d: size, len: array_sizes } )
                     }
                 }
                 FieldInfo::Pointer { .. } => {

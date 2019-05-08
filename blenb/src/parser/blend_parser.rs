@@ -1,8 +1,9 @@
 //! The nom parser used by the library. It is recommended to use `Blend::new` instead of
 //! the `parser::BlendParseContext` directly.
 
-use nom::{IResult, Err, Needed, be_u64, be_u32, le_u64, le_u32};
+use nom::{IResult, Err, Needed, be_u64, be_u32, le_u64, le_u32, named, alt, do_parse, tag, method, u32, call_m, map, many_till, take};
 use super::{PointerSize, Endianness, Block, BlockHeader, Header, Blend};
+use std::num::NonZeroU64;
 
 named!(pointer_size < &[u8], PointerSize >,
     alt!(
@@ -62,7 +63,7 @@ impl Default for BlendParseContext {
 }
 
 impl BlendParseContext {
-    fn old_memory_address(self, i:&[u8]) -> (Self, IResult<&[u8], u64>) {
+    fn old_memory_address(self, i:&[u8]) -> (Self, IResult<&[u8], NonZeroU64>) {
         let read_len = match self.pointer_size {
             PointerSize::Bits32 => 4,
             PointerSize::Bits64 => 8,
@@ -71,16 +72,29 @@ impl BlendParseContext {
         if i.len() < read_len {
             (self, Err(Err::Incomplete(Needed::Size(read_len-i.len()))))
         } else {
-            match (self.pointer_size, self.endianness) {
+            let address = match (self.pointer_size, self.endianness) {
                 (PointerSize::Bits32, Endianness::LittleEndian) => 
-                    (self, le_u32(i).map(|(u, n)| (u, u64::from(n)))),
+                    le_u32(i).map(|(u, n)| (u, u64::from(n))),
                 (PointerSize::Bits64, Endianness::LittleEndian) => 
-                    (self, le_u64(i)),
+                    le_u64(i),
                 (PointerSize::Bits32, Endianness::BigEndian) => 
-                    (self, be_u32(i).map(|(u, n)| (u, u64::from(n)))),
+                    be_u32(i).map(|(u, n)| (u, u64::from(n))),
                 (PointerSize::Bits64, Endianness::BigEndian) =>  
-                    (self, be_u64(i)),
-            }
+                    be_u64(i),
+            };
+
+            (self, address.and_then(|(rest, address)| {
+                match NonZeroU64::new(address) {
+                    Some(address) => {
+                        Ok((rest, address))
+                    }
+                    None => {
+                        Err(Err::Failure(nom::Context::Code(rest, nom::ErrorKind::Tag)))
+                    }
+                }
+            }))
+
+            //
         }
     }
 

@@ -16,14 +16,15 @@
 //! }
 //! ```
 
-#[macro_use]
-extern crate nom;
-
-pub mod parser;
+pub mod blend_parser;
+pub mod primitive_parsers;
+pub mod struct_parser;
+pub mod field_parser;
 
 use std::fmt::{self, Debug, Formatter};
 use std::io::{self, Read};
 use std::path::Path;
+use std::num::NonZeroU64;
 
 /// Pointer fields inside the .blend file can have either 32 or 64 bits
 /// depending on the computer used to save the file.
@@ -79,7 +80,7 @@ pub struct BlockHeader {
     /// The size in bytes of this block's data. Should be the same number as the `Block::data::len`.
     pub size: u32,
     /// Blender dumps its memory into the .blend file and some blocks have pointers to other blocks, this address is used to follow these pointers.
-    pub old_memory_address: u64,
+    pub old_memory_address: NonZeroU64,
     /// In some cases represents the type of the file-block in the DNA array of types, see [blend_sdna](todo:add_link) for more.
     pub sdna_index: u32,
     /// A file-block can contain more than one struct.
@@ -121,7 +122,7 @@ impl Blend {
         let mut buffer = Vec::new();
         data.read_to_end(&mut buffer).map_err(BlendError::Io)?;
 
-        let parser = parser::BlendParseContext::default();
+        let parser = blend_parser::BlendParseContext::default();
 
         let res = parser.blend(&buffer);
 

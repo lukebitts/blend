@@ -1,4 +1,4 @@
-use blend::Blend;
+use blenb::Blend;
 use std::fs::File;
 use std::io::{self, BufWriter, Read, Write};
 use std::{env, path};
@@ -8,7 +8,7 @@ pub fn main() -> Result<(), io::Error> {
         env::var_os("CARGO_MANIFEST_DIR").expect("could not find cargo manifest dir"),
     );
 
-    let blend_path = base_path.join("../assets/characters/male/source/male2.blend"); //examples/print_blend/simple.blend
+    let blend_path = base_path.join("../assets/scenes/color_sketch/color.blend"); //examples/print_blend/simple.blend
     let output_path = base_path.join("examples/print_blend/output.txt");
 
     println!("{:?}", blend_path);
@@ -20,11 +20,9 @@ pub fn main() -> Result<(), io::Error> {
     let blend = Blend::new(&data[..]);
     let mut buffer = BufWriter::new(File::create(output_path)?);
 
-    for (_struct_addr, ref struct_instance) in &blend.instance_structs {
-        let instance_string: Vec<_> = struct_instance.to_string().bytes().collect();
-        buffer.write(&instance_string[..])?;
-        buffer.write(&b"\n"[..])?;
-    }
+    let instance_string: Vec<_> = blend.to_string().bytes().collect();
+    buffer.write(&instance_string[..])?;
+    buffer.write(&b"\n"[..])?;
 
     buffer.flush()?;
 
