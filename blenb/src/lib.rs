@@ -719,11 +719,11 @@ impl Blend {
                     let pointer = instance.get_ptr(field_template);
 
                     let value_str = match pointer {
-                        PointerInfo::Invalid => String::from("[invalid]"),
+                        PointerInfo::Invalid => String::from("invalid"),
                         PointerInfo::Null => String::from("null"),
                         PointerInfo::Block(block) => {
                             if seen_addresses.contains(&block.header.old_memory_address) {
-                                format!("{}", block.header.old_memory_address)
+                                format!("@{}", block.header.old_memory_address)
                             }
                             else {
                                 if block.header.count == 1 {
@@ -753,7 +753,7 @@ impl Blend {
                         }
                     };
 
-                    format!("{}    {}: *{} = @{}\n",
+                    format!("{}    {}: *{} = {}\n",
                         ident_string,
                         field_name,
                         field_template.type_name,
@@ -798,7 +798,7 @@ impl Blend {
                 }
                 InstanceToPrint::FromField{ address, ident, print_id, field_template, instance } => {
                     let mut field_string = if let Some(address) = address {
-                        format!("{} @({})\n", field_template.type_name, address)
+                        format!("{} (address: {})\n", field_template.type_name, address)
                     } else {
                         format!("{}\n", field_template.type_name)
                     };
@@ -818,7 +818,7 @@ impl Blend {
                                     ));
                             }
                         }
-                        InstanceNumber::Many(instances) => {
+                        InstanceNumber::Many(ref instances) => {
                             let ident_string: String = std::iter::repeat("    ").take(ident).collect();
                             for instance in instances {
                                 field_string.push_str(&format!("{}{{\n", ident_string));
@@ -835,7 +835,14 @@ impl Blend {
                                         ));
                                 }
                                 field_string = field_string.trim_right().to_string();
-                                field_string.push_str(&format!("{}\n{}}}\n", ident_string, ident_string));
+                                field_string.push_str(&format!("{}\n{}and other {} elements ... \n{}}}\n", 
+                                    ident_string, 
+                                    ident_string, 
+                                    instances.len() - 1, 
+                                    ident_string
+                                ));
+
+                                break
                             }
                         }
                     }
