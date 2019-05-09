@@ -22,6 +22,7 @@ fn main() {
 
     println!("{:#?}", unique_codes);
     /*
+    todo: add this to docs
     {
         "TEST",
         "SN",
