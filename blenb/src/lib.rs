@@ -389,22 +389,29 @@ impl<'a> Instance<'a> {
                         generate_fields(r#struct, r#type, &self.dna, &self.blend.header)
                     } else {
                         if field.type_index >= 12 {
-                            let r#struct = &self
+                            if block.header.sdna_index >= 12 {
+                                //assert_eq!(field.type_index as u16, self.dna.structs[block.header.sdna_index as usize].0);
+                                let r#struct = &self.dna.structs[block.header.sdna_index as usize];
+                                let r#type = &self.dna.types[r#struct.0 as usize];
+                                generate_fields(r#struct, r#type, self.dna, &self.blend.header)
+                            } else if let Some(r#struct) = &self
                                 .dna
                                 .structs
                                 .iter()
-                                .find(|s| s.0 == field.type_index)
-                                .unwrap_or_else(|| {
-                                    panic!(
-                                        "could not find type information for field '{}'. ({:?})",
-                                        name, field
-                                    )
-                                });
-                            let r#type = &self.dna.types[r#struct.0 as usize];
-
-                            generate_fields(r#struct, r#type, self.dna, &self.blend.header)
+                                .find(|s| s.0 == field.type_index) {
+                                let r#type = &self.dna.types[r#struct.0 as usize];
+                                generate_fields(r#struct, r#type, self.dna, &self.blend.header)
+                            } else {
+                                unreachable!("impossible type")
+                            }
                         } else {
-                            LinkedHashMap::new()
+                            let r#struct = &self.dna.structs[block.header.sdna_index as usize];
+                            if r#struct.0 >= 12 {
+                                let r#type = &self.dna.types[r#struct.0 as usize];
+                                generate_fields(r#struct, r#type, &self.dna, &self.blend.header)
+                            } else {
+                                unreachable!("impossible type")
+                            }
                         }
                     }
                 };
@@ -716,6 +723,16 @@ impl Blend {
                     format!("{}    {}: {} = {}\n", ident_string, field_name, field_template.type_name, value_str.trim_right())
                 }
                 FieldInfo::Pointer { indirection_count: 1 } => {
+                    
+                    if field_template.type_index == 12 {
+                        return format!("{}    {}: *{} = {}\n",
+                            ident_string,
+                            field_name,
+                            field_template.type_name,
+                            "/LINK/",
+                        )
+                    }
+
                     let pointer = instance.get_ptr(field_template);
 
                     let value_str = match pointer {
@@ -835,11 +852,9 @@ impl Blend {
                                         ));
                                 }
                                 field_string = field_string.trim_right().to_string();
-                                field_string.push_str(&format!("{}\n{}and other {} elements ... \n{}}}\n", 
-                                    ident_string, 
-                                    ident_string, 
-                                    instances.len() - 1, 
-                                    ident_string
+                                field_string.push_str(&format!("{ident_string}\n{ident_string}{ident_string}> and other {len} elements ... \n{ident_string}}}\n", 
+                                    ident_string=ident_string,
+                                    len=instances.len() - 1,
                                 ));
 
                                 break
@@ -853,103 +868,6 @@ impl Blend {
         }
 
         final_string
-        /*let mut final_string = String::new();
-        let mut root_blocks: VecDeque<(Option<usize>, Option<FieldTemplate>, Instance)> = 
-            self.get_all_root_blocks()
-            .into_iter()
-            .map(|i| (None, None, i))
-            .collect();
-
-        while let Some((_, instance_template, instance)) = root_blocks.pop_front() {
-
-            //TODO: vai ter que ser recursivo mesmo
-
-            let (r#struct, r#type) : (&(u16, Vec<(u16, u16)>), &(String, u16))= {
-                match (instance_template, &instance.data) {
-                    (None, InstanceDataFormat::Block(block)) => {
-                        let r#struct = &self.dna.structs[block.header.sdna_index as usize];
-                        let r#type = &self.dna.types[r#struct.0 as usize];
-
-                        final_string.push_str(&format!("{} (@{})\n", r#type.0, block.header.old_memory_address));
-
-                        (r#struct, r#type)
-                    },
-                    (Some(_), InstanceDataFormat::Block(_)) => { panic!("block instance with custom type");},
-                    (Some(instance_template), InstanceDataFormat::Raw(_)) => {
-                        let r#struct = &self
-                            .dna
-                            .structs
-                            .iter()
-                            .find(|s| s.0 == instance_template.type_index)
-                            .expect("invalid type for struct");
-                        let r#type = &self.dna.types[r#struct.0 as usize];
-
-                        final_string.push_str(&format!("{}\n", r#type.0));
-
-                        (r#struct, r#type)
-                    }
-                    (None, InstanceDataFormat::Raw(_)) => {
-                        panic!("raw struct has no type information");
-                    }
-                }
-            };
-
-            for (field_name, field_template) in &instance.fields {
-                final_string.push_str(&format!("    {}: {}", field_name, field_template.type_name));
-
-                match field_template.info {
-                    FieldInfo::Value => {
-                        let value_str = match &field_template.type_name[..] {
-                            "int" => format!("{}", instance.get_i32(field_name)), 
-                            "char" => format!("{}", instance.get_u8(field_name)), 
-                            //"uchar" => format!("{}", instance.get_u8(field_name)), 
-                            "short" => format!("{}", instance.get_i16(field_name)), 
-                            //"ushort" => format!("{}", instance.get_u16(field_name)), 
-                            "float" => format!("{}", instance.get_f32(field_name)), 
-                            "double" => format!("{}", instance.get_f64(field_name)), 
-                            //"long" => format!("{}", instance.get_i32(field_name)), 
-                            //"ulong" => format!("{}", instance.get_i32(field_name)), 
-                            "int64_t" => format!("{}", instance.get_i64(field_name)), 
-                            "uint64_t" => format!("{}", instance.get_u64(field_name)),
-                            name if field_template.is_primitive => panic!("unknown primitive {}", name),
-                            _ => {
-                                let value_instance = instance.get(field_name);
-
-                                root_blocks.push_back((Some(final_string.len()), Some(field_template.clone()), value_instance));
-
-                                continue
-                            }
-                        };
-
-                        final_string.push_str(&format!(" = {},\n", value_str));
-                    }
-                    FieldInfo::ValueArray1D { len } => {
-                        let value_str = match &field_template.type_name[..] {
-                            "int" => format!("{:?}", instance.get_i32_vec(field_name)), 
-                            "char" => format!("{:?}", instance.get_string(field_name)), 
-                            //"uchar" => format!("{}", instance.get_u8_vec(field_name)), 
-                            "short" => format!("{:?}", instance.get_i16_vec(field_name)), 
-                            //"ushort" => format!("{}", instance.get_u16_vec(field_name)), 
-                            "float" => format!("{:?}", instance.get_f32_vec(field_name)), 
-                            "double" => format!("{:?}", instance.get_f64_vec(field_name)), 
-                            //"long" => format!("{}", instance.get_i32_vec(field_name)), 
-                            //"ulong" => format!("{}", instance.get_i32_vec(field_name)), 
-                            "int64_t" => format!("{:?}", instance.get_i64_vec(field_name)), 
-                            "uint64_t" => format!("{:?}", instance.get_u64_vec(field_name)),
-                            _ => String::new(),
-                        };
-
-                        final_string.push_str(&format!("[{}] = {},\n", len, value_str));
-                    }
-                    _ => final_string.push_str("\n")
-                }
-            }
-
-            final_string.push_str("\n");
-        }
-        
-
-        final_string*/
     }
 }
 
