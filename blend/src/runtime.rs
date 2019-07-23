@@ -129,7 +129,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
-        println!("is valid? {}", name.as_ref());
+        //println!("is valid? {}", name.as_ref());
         let name = name.as_ref();
         let field = self.expect_field(name);
 
