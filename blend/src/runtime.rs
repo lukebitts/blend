@@ -81,6 +81,10 @@ impl<'a> Instance<'a> {
         self.data.code().expect("instance doesn't have a code")
     }
 
+    pub fn memory_address(&self) -> NonZeroU64 {
+        self.data.memory_address().expect("instance doesn't have memory address")
+    }
+
     fn expect_field(&self, name: &str) -> &FieldTemplate {
         match &self.fields.get(name) {
             Some(field) => field,
