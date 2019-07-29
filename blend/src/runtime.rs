@@ -76,6 +76,13 @@ pub struct Instance<'a> {
     pub fields: LinkedHashMap<String, FieldTemplate>,
 }
 
+impl<'a> std::fmt::Debug for Instance<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Instance {{ fields: {:?} }}", self.fields)
+    }
+}
+
+
 impl<'a> Instance<'a> {
     pub fn code(&self) -> [u8; 2] {
         self.data.code().expect("instance doesn't have a code")
@@ -175,8 +182,6 @@ impl<'a> Instance<'a> {
                         Block::Principal { data, .. } | Block::Subsidiary { data, .. } => {
                             let address = self.parse_ptr_address(&data.data[i * pointer_size..]);
                             //parse_u64(&block.data[i * ptr_size..], self.blend.header.endianness);
-
-                            println!("{:?}", block);
 
                             match address {
                                 Some(address) => {
