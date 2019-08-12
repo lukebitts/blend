@@ -82,14 +82,15 @@ impl<'a> std::fmt::Debug for Instance<'a> {
     }
 }
 
-
 impl<'a> Instance<'a> {
     pub fn code(&self) -> [u8; 2] {
         self.data.code().expect("instance doesn't have a code")
     }
 
     pub fn memory_address(&self) -> NonZeroU64 {
-        self.data.memory_address().expect("instance doesn't have memory address")
+        self.data
+            .memory_address()
+            .expect("instance doesn't have memory address")
     }
 
     fn expect_field(&self, name: &str) -> &FieldTemplate {
@@ -190,7 +191,7 @@ impl<'a> Instance<'a> {
                                         | Block::Subsidiary { memory_address, .. } => {
                                             *memory_address == address
                                         }
-                                        _ => return false,
+                                        _ => false,
                                     }) {
                                         return false;
                                     } else {
