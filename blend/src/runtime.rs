@@ -8,12 +8,16 @@ use crate::parsers::{
 use linked_hash_map::LinkedHashMap;
 use std::{io::Read, mem::size_of, num::NonZeroU64, path::Path};
 
+/// An `Instance`'s data can be a reference to a `Block` if the `Instance` represents a root or subsidiary block,
+/// or it can be raw bytes if the `Instance` was created by accessing a field in another `Instance`.
 #[derive(Clone)]
 pub enum InstanceDataFormat<'a> {
     Block(&'a Block),
     Raw(&'a [u8]),
 }
 
+/// Pointers in the blend file are valid if the file contains another block with the correct address. They are invalid 
+/// if no block is found with the correct address.
 pub enum PointerInfo<'a> {
     Block(&'a Block),
     Null,
@@ -21,6 +25,7 @@ pub enum PointerInfo<'a> {
 }
 
 impl<'a> InstanceDataFormat<'a> {
+    /// `get` simplifies the access to the underlying data inside the `InstanceDataFormat`.
     fn get(&self, start: usize, len: usize) -> &'a [u8] {
         match self {
             InstanceDataFormat::Block(block) => match block {
@@ -33,6 +38,9 @@ impl<'a> InstanceDataFormat<'a> {
         }
     }
 
+    /// Returns the code of the underlying block, if it has one. 
+    /// # Panics
+    /// Panics if called on subsidiary blocks
     fn code(&self) -> Option<[u8; 2]> {
         match self {
             InstanceDataFormat::Block(block) => match block {
@@ -44,6 +52,7 @@ impl<'a> InstanceDataFormat<'a> {
         }
     }
 
+    /// Returns the memory address of the underlying block, if it has one.
     pub fn memory_address(&self) -> Option<NonZeroU64> {
         match self {
             InstanceDataFormat::Block(block) => match block {
@@ -56,24 +65,35 @@ impl<'a> InstanceDataFormat<'a> {
     }
 }
 
+/// Represents a field inside a struct. The data `FieldTemplate` keeps is used to interpret the raw bytes of the block.
 #[derive(Debug, Clone)]
 pub struct FieldTemplate {
     //pub name: String,
     pub info: FieldInfo,
+    /// The index of this field's type inside the `Dna::types` array.
     pub type_index: usize,
+    /// The type name of this field. Used for pretty printing and some sanity checks.
     pub type_name: String,
+    /// The index of the data in the `Instance` owned by this field.
     pub data_start: usize,
+    /// The length in bytes of the data in the `Instance` owned by this field.
     pub data_len: usize,
+    /// A field can represent a primitive or a struct.
     pub is_primitive: bool,
 }
 
+/// Represents a block of data inside the blend file. An `Instance` can be a camera, a mesh, a material, or anything
+/// else Blender uses internally, like material nodes, user settings or render options. An `Instance` is conceptually a 
+/// `struct`: a collection of named fields which can themselves be structs or primitives.
 #[derive(Clone)]
 pub struct Instance<'a> {
+    /// References to the `Dna` and the `ParsedBlend` are kept because we only interpret data when the user accesses it.
     dna: &'a Dna,
     blend: &'a ParsedBlend,
+    /// The raw binary data this `Instance` owns.
     pub data: InstanceDataFormat<'a>,
-    //We use a LinkedHashMap here because we want to preserve insertion order
-    pub fields: LinkedHashMap<String, FieldTemplate>,
+    /// The fields of this `Instance`. 
+    pub fields: LinkedHashMap<String, FieldTemplate>, //We use a LinkedHashMap here because we want to preserve insertion order
 }
 
 impl<'a> std::fmt::Debug for Instance<'a> {
@@ -83,16 +103,27 @@ impl<'a> std::fmt::Debug for Instance<'a> {
 }
 
 impl<'a> Instance<'a> {
+    /// If this `Instance` was created from a primary/root `Block` it will have a code. Possible codes include "OB" for
+    /// objects, "ME" for meshes, "CA" for cameras, etc.
+    /// # Panics
+    /// Panics if the instance underlying data doesn't have a code
     pub fn code(&self) -> [u8; 2] {
         self.data.code().expect("instance doesn't have a code")
     }
 
+    /// If this `Instance` was created from a primary/root or subsidiary `Block` it will have a memory address. Blender
+    /// dumps its memory into the blend file when saving and the old memory addresses are used the recreate the 
+    /// connections between blocks when loading the file again.
+    /// /// # Panics
+    /// Panics if the instance underlying data doesn't have an old memory address.
     pub fn memory_address(&self) -> NonZeroU64 {
         self.data
             .memory_address()
             .expect("instance doesn't have memory address")
     }
 
+    /// `expect_field` simplifies accessing a field since most of the time panicking is the correct response for an
+    /// invalid field name.
     fn expect_field(&self, name: &str) -> &FieldTemplate {
         match &self.fields.get(name) {
             Some(field) => field,
@@ -113,6 +144,7 @@ impl<'a> Instance<'a> {
     /// instead of this unless you know what you are doing. Check `Blend::to_string` for proper usage.
     /// # Panics
     /// Panics if field.info is not FieldInfo::Pointer
+    /// 
     /// Panics if the block pointed by this field is not Block::Principal or Block::Subsidiary
     pub fn get_ptr(&self, field: &FieldTemplate) -> PointerInfo<'a> {
         match field.info {
@@ -140,6 +172,9 @@ impl<'a> Instance<'a> {
         }
     }
 
+    /// Tests whether a pointer is valid or not.
+    /// # Panics
+    /// Panics if field `name` is not a pointer.
     pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
         //println!("is valid? {}", name.as_ref());
         let name = name.as_ref();
@@ -213,6 +248,7 @@ impl<'a> Instance<'a> {
         }
     }
 
+    /// `get_value` abstracts accessing primitives and is used by all `get_[]` functions (`get_i8`, `get_f32`, etc).
     fn get_value<T: AsRef<str>, U: BlendPrimitive>(&self, name: T) -> U {
         let name = name.as_ref();
         let field = self.expect_field(name);
@@ -282,6 +318,8 @@ impl<'a> Instance<'a> {
         self.get_value(name)
     }
 
+    /// `get_value_vec` abstracts accessing primitive arrays and is used by all `get_[]_vec` functions (`get_i8_vec`, 
+    /// `get_f32_vec`, etc).
     fn get_value_vec<T: AsRef<str>, U: BlendPrimitive>(&self, name: T) -> Vec<U> {
         let name = name.as_ref();
         let field = self.expect_field(name);
@@ -487,7 +525,7 @@ impl<'a> Instance<'a> {
         }
     }
 
-    //todo: return an actual vec here
+    //todo: return a vec here?
     pub fn get_vec<T: AsRef<str>>(&self, name: T) -> impl Iterator<Item = Instance<'a>> {
         let name = name.as_ref();
         let field = self.expect_field(name);
@@ -530,7 +568,7 @@ impl<'a> Instance<'a> {
                     cur = cur.get("next");
                 }
 
-                //todo: stop hijacking the vector iterator implementation
+                //todo: return a custom iterator 
                 instances.into_iter()
             }
             FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
@@ -694,8 +732,8 @@ impl<'a> Instance<'a> {
 }
 
 pub struct Blend {
-    /// `ParsedBlend` is an alias for the raw .blend file parsed by [blend_parse](todo:add_link).
-    /// It contains the header and file-blocks of the .blend file.
+    /// `blend` field contains the header, file-blocks and dna of the .blend file, which are used in runtime to 
+    /// interpret the blend file data.
     pub blend: ParsedBlend,
 }
 
