@@ -20,7 +20,9 @@ use std::{
 };
 
 pub struct BlockData {
+    /// The entire binary data of the `Block` in the blend file.
     pub data: Vec<u8>,
+    /// The data field can contain more than one struct, count tells us how many there is.
     pub count: usize,
 }
 
@@ -30,29 +32,39 @@ impl Debug for BlockData {
     }
 }
 
+/// Represents all possible block types found in the blend file.
+/// `Rend`, `Test` and `Global` are ignored by this crate but are still represented here.
 #[derive(Debug)]
 pub enum Block {
     Rend,
     Test,
     Global,
+    /// A principal (or root) block is defined by having a two digit code and by the fact that its `dna_index` is always
+    /// valid. If we have a pointer to a principal block, we can ignore the type of the pointer and use the block type.
     Principal {
         code: [u8; 2],
         memory_address: NonZeroU64,
         dna_index: usize,
         data: BlockData,
     },
+    /// Subsidiary blocks are defined by having the code "DATA", which is ommited here. Their `dna_index` is not
+    /// always correct and is only used when whichever field points to them has an "invalid" type (like void*).
     Subsidiary {
         memory_address: NonZeroU64,
         dna_index: usize,
         data: BlockData,
     },
+    /// The DNA of the blend file. Used to interpret all the other blocks.
     Dna(Dna),
 }
 
 #[derive(Debug, Clone)]
 pub struct Header {
+    /// The size of the pointer on the machine used to save the blend file.
     pub pointer_size: PointerSize,
+    /// The endianness on the machine used to save the blend file.
     pub endianness: Endianness,
+    /// The version of Blender used to save the blend file.
     pub version: [u8; 3],
 }
 

@@ -9,12 +9,26 @@ use std::{
 };
 
 impl Blend {
+    /// Returns a string representation of the entire blend file. A small blend file returns a 2mb string.
     pub fn to_string(&self) -> String {
+        // This function has to identify the correct type of every struct and their fields to transform everything
+        // correctly into a string. It serves as an example of how to read the data provided by this crate field by
+        // field, how to identify their type and whether it is a valid field or not. While the recommended way of
+        // using this crate is to know 100% what you want to access, `Blend::to_string` shows how a more exploratory 
+        // approach could work.
+
+        // Before converting everything to a string, we need to do some bookkeeping:
+        // We could be printing a single or a many instances, this is necessary because a blend file has many
+        // ways of representing an array. By using `InstanceNumber` we make this is explicit.
         enum InstanceNumber<'a> {
             Single(Instance<'a>),
             Many(Vec<Instance<'a>>),
         }
 
+        // We can't just go through each `Instance` and print them. Root instances can be printed easily as
+        // all the information we need is contained within their internal `Block`s. Subsidiary blocks on the other
+        // hand can only have their type known once they are accessed through a field. So we need to go through every
+        // field in every Instance recursively to know how to print everything.
         enum InstanceToPrint<'a> {
             Root(Instance<'a>),
             FromField {
@@ -27,6 +41,7 @@ impl Blend {
         }
 
         let root_blocks = self.get_all_root_blocks();
+        // To avoid duplication we keep the address of the blocks we have seen.
         let mut seen_addresses: HashSet<_> = root_blocks
             .iter()
             .map(|root_block| {
@@ -37,12 +52,14 @@ impl Blend {
             })
             .collect();
 
+        // All root blocks are converted to an `InstanceToPrint`.
         let mut instances_to_print: VecDeque<_> =
             root_blocks.into_iter().map(InstanceToPrint::Root).collect();
 
         let mut final_string = String::new();
         let mut field_instance_print_id = 0_usize;
 
+        // Converts a single field into a String and makes sure all the bookkeeping is correct and identation too.
         fn field_to_string<'a>(
             field_name: &str,
             field_template: &FieldTemplate,
@@ -54,6 +71,9 @@ impl Blend {
         ) -> String {
             let ident_string: String = std::iter::repeat("    ").take(ident).collect();
             match &field_template.info {
+                // A value field is easy to convert. If they are a primitive we simply emit the correct string,
+                // if the field is not a primitive, we add an `InstanceToPrint::FromField` to the `instance_to_print`
+                // queue.
                 FieldInfo::Value => {
                     let value_str = match &field_template.type_name[..] {
                         "int" => format!("{}", instance.get_i32(field_name)),
@@ -91,8 +111,12 @@ impl Blend {
                         value_str.trim_end()
                     )
                 }
+                // A value array goes through the same process as a value, except for char arrays which are shown as
+                // strings.
                 FieldInfo::ValueArray { dimensions_len, .. } => {
                     let value_str = match &field_template.type_name[..] {
+                        // Here we assume that every char array is a string, but blender also uses these for bitfields.
+                        // todo: add the other values
                         "char" => instance.get_string(field_name),
                         _ => {
                             return format!(
@@ -111,9 +135,14 @@ impl Blend {
                         value_str.trim_end()
                     )
                 }
+                // Pointers are also easy to convert, we follow their address and add a `InstanceToPrint::FromField` to
+                // the queue.
                 FieldInfo::Pointer {
                     indirection_count: 1,
                 } => {
+                    // This is a big assumption we make: A type index with 12 as its value is what Blender calls a Link,
+                    // this type as far as I could understand breaks rules that every other block follows including
+                    // lying about its own size and the type of its fields. We simply give up here.
                     if field_template.type_index == 12 {
                         return format!(
                             "{}    {}: *{} = {}\n",
@@ -123,6 +152,9 @@ impl Blend {
 
                     let pointer = instance.get_ptr(field_template);
 
+                    // Here it is all a matter of finding out if the pointer points somewhere and adding another
+                    // `InstanceToPrint::FromField` to the stack, if the `Instance` has already been seen we emit
+                    // the pointer address instead.
                     let value_str = match pointer {
                         PointerInfo::Invalid => String::from("invalid"),
                         PointerInfo::Null => String::from("null"),
@@ -174,6 +206,7 @@ impl Blend {
                         ident_string, field_name, field_template.type_name, value_str,
                     )
                 }
+                //todo: 
                 _ => format!(
                     "{}    {}: {} = [xxx]\n",
                     ident_string, field_name, field_template.type_name

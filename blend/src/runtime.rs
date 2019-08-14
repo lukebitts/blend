@@ -114,7 +114,7 @@ impl<'a> Instance<'a> {
     /// If this `Instance` was created from a primary/root or subsidiary `Block` it will have a memory address. Blender
     /// dumps its memory into the blend file when saving and the old memory addresses are used the recreate the 
     /// connections between blocks when loading the file again.
-    /// /// # Panics
+    /// # Panics
     /// Panics if the instance underlying data doesn't have an old memory address.
     pub fn memory_address(&self) -> NonZeroU64 {
         self.data
@@ -756,6 +756,11 @@ impl Blend {
         Self { blend }
     }
 
+    /// A blend file is made of blocks of binary data which represent structs. These blocks can have pointers to other
+    /// blocks but only root blocks have a defined type (Object, Mesh, Materal, etc). Subsidiary blocks may or may not
+    /// have the correct type information in their headers, but their type is defined by the field that accesses them.
+    /// You can only query for root blocks because subsidiary blocks have to be accessed through some field for their
+    /// type to be known.
     pub fn get_all_root_blocks(&self) -> Vec<Instance> {
         self.blend
             .blocks
@@ -780,6 +785,8 @@ impl Blend {
             .collect::<Vec<_>>()
     }
 
+    /// Root blocks have a code that tells us their type, "OB" for object, "ME" for mesh, "MA" for material, etc.
+    /// You can use this method to filter for a single type of block.
     pub fn get_by_code(&self, search_code: [u8; 2]) -> Vec<Instance> {
         self.blend
             .blocks

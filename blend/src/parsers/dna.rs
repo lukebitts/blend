@@ -61,7 +61,7 @@ impl DnaParseContext {
         let (input, names) = count(
             terminated(
                 map(take_while(|b: u8| b != 0), |b: &[u8]| {
-                    *all_names_len.borrow_mut() += b.len() + 1; //+1 for the null terminating separator
+                    *all_names_len.borrow_mut() += b.len() + 1; //+1 for the null separator
                     String::from_utf8_lossy(b).into_owned()
                 }),
                 tag("\0"),
