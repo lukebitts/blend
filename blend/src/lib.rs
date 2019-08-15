@@ -78,13 +78,19 @@
 //! This crate is also lazy. While some work has to be done upfront to find the blocks and their type definitions,
 //! the binary data of the blocks is not parsed until you actually access it.
 //! 
+//! ### Supported versions
+//! As the blend file is self-describing it should possible to parse files from every Blender version. Some things
+//! are assumed to always be true though: the type "int" for example is always considered equivalent to Rust's `i32` but 
+//! there is nothing in the file specification that guarantees this. There is very little reason to believe Blender
+//! would change its primitive types though.
+//! 
 //! ### Usage and warnings
 //! This crate is meant to be used with trusted .blend files, while no unsafety or undefined behaviour is expected
 //! from reading a malicious file, it is probably possible to craft a .blend file that causes a panic at runtime. 
 //! 
 //! Due to some quirks of the specification, parts of the
 //! library are a bit liberal in what kind of conversions it allows. For example: any block with the correct
-//! size can be parsed a list of floats, why? Because some subsidiary blocks are actual arrays of floats, but neither
+//! size can be parsed as a list of floats, why? Because some subsidiary blocks are actual arrays of floats, but neither
 //! the field accessing them has "array of floats" as type nor the block has the correct type (the field
 //! is a pointer to void and the block has an invalid type). This means it is up to
 //! the user to decide what they want when accessing the data.
