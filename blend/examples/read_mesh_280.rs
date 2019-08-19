@@ -6,7 +6,7 @@ type Face = [Vertex; 3];
 
 #[derive(Debug)]
 struct Mesh {
-    faces: Vec<Face>
+    faces: Vec<Face>,
 }
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ struct Object {
     mesh: Mesh,
 }
 
-fn instance_to_mesh<'a>(mesh: Instance<'a>) -> Mesh {
+fn instance_to_mesh(mesh: Instance) -> Mesh {
     if !mesh.is_valid("mpoly")
         || !mesh.is_valid("mloop")
         || !mesh.is_valid("mloopuv")
@@ -106,13 +106,7 @@ fn instance_to_mesh<'a>(mesh: Instance<'a>) -> Mesh {
         })
         .collect::<Vec<Vertex>>();
 
-    let faces: Vec<_> = faces.chunks(3).map(|f| {
-        [
-            f[0],
-            f[1],
-            f[2]
-        ]
-    }).collect();
+    let faces: Vec<_> = faces.chunks(3).map(|f| [f[0], f[1], f[2]]).collect();
 
     Mesh { faces }
 }
