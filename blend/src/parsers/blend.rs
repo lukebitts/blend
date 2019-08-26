@@ -38,7 +38,11 @@ impl Debug for BlockData {
 pub enum Block {
     Rend,
     Test,
-    Global,
+    Global {
+        memory_address: NonZeroU64,
+        dna_index: usize,
+        data: BlockData,
+    },
     /// A principal (or root) block is defined by having a two digit code and by the fact that its `dna_index` is always
     /// valid. If we have a pointer to a principal block, we can ignore the type of the pointer and use the block type.
     Principal {
@@ -229,7 +233,14 @@ impl BlendParseContext {
                 let block = match &code {
                     b"REND" => Block::Rend,
                     b"TEST" => Block::Test,
-                    b"GLOB" => Block::Global,
+                    b"GLOB" => Block::Global {
+                        memory_address,
+                        dna_index: dna_index.try_into().expect("u32 to usize"),
+                        data: BlockData {
+                            data: block_data.to_vec(),
+                            count: count.try_into().expect("u32 to usize"),
+                        },
+                    },
                     b"DATA" => Block::Subsidiary {
                         memory_address,
                         dna_index: dna_index.try_into().expect("u32 to usize"),

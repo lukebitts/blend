@@ -11,7 +11,7 @@ pub fn main() -> Result<(), io::Error> {
         env::var_os("CARGO_MANIFEST_DIR").expect("could not find cargo manifest dir"),
     );
 
-    let blend_path = base_path.join("examples/blend_files/snake_cubes.blend");
+    let blend_path = base_path.join("examples/blend_files/Blender 2.blend");
     let output_path = base_path.join("examples/print_blend/output.txt");
 
     println!("{:?}", blend_path);
@@ -23,8 +23,12 @@ pub fn main() -> Result<(), io::Error> {
     let blend = Blend::new(&data[..]);
     let mut buffer = BufWriter::new(File::create(output_path)?);
 
-    let instance_string: Vec<_> = blend.to_string().bytes().collect();
-    buffer.write_all(&instance_string[..])?;
+    for instance in blend.get_all_root_blocks() {
+        println!("{}", instance);
+    }
+
+    /*let instance_string: Vec<_> = blend.to_string().bytes().collect();
+    buffer.write_all(&instance_string[..])?;*/
     buffer.write_all(&b"\n"[..])?;
 
     buffer.flush()?;

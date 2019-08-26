@@ -5,40 +5,37 @@ use crate::{
 };
 use std::{
     collections::{HashSet, VecDeque},
+    io::{self, Write},
     num::NonZeroU64,
 };
+
+enum InstanceNumber<'a> {
+    Single(Instance<'a>),
+    Many(Vec<Instance<'a>>),
+}
+
+
+enum InstanceToPrint<'a> {
+    Root(Instance<'a>),
+    FromField {
+        address: Option<NonZeroU64>,
+        ident: usize,
+        print_id: usize,
+        field_template: FieldTemplate,
+        instance: InstanceNumber<'a>,
+    },
+}
+
+
 
 impl Blend {
     /// Returns a string representation of the entire blend file. A small blend file returns a 2mb string.
     pub fn to_string(&self) -> String {
-        // This function has to identify the correct type of every struct and their fields to transform everything
-        // correctly into a string. It serves as an example of how to read the data provided by this crate field by
-        // field, how to identify their type and whether it is a valid field or not. While the recommended way of
-        // using this crate is to know 100% what you want to access, `Blend::to_string` shows how a more exploratory 
-        // approach could work.
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
 
-        // Before converting everything to a string, we need to do some bookkeeping:
-        // We could be printing a single or a many instances, this is necessary because a blend file has many
-        // ways of representing an array. By using `InstanceNumber` we make this is explicit.
-        enum InstanceNumber<'a> {
-            Single(Instance<'a>),
-            Many(Vec<Instance<'a>>),
-        }
-
-        // We can't just go through each `Instance` and print them. Root instances can be printed easily as
-        // all the information we need is contained within their internal `Block`s. Subsidiary blocks on the other
-        // hand can only have their type known once they are accessed through a field. So we need to go through every
-        // field in every Instance recursively to know how to print everything.
-        enum InstanceToPrint<'a> {
-            Root(Instance<'a>),
-            FromField {
-                address: Option<NonZeroU64>,
-                ident: usize,
-                print_id: usize,
-                field_template: FieldTemplate,
-                instance: InstanceNumber<'a>,
-            },
-        }
+        
+        
 
         let root_blocks = self.get_all_root_blocks();
         // To avoid duplication we keep the address of the blocks we have seen.
@@ -87,7 +84,9 @@ impl Blend {
                         //"ulong" => format!("{}", instance.get_i32(field_name)),
                         "int64_t" => format!("{}", instance.get_i64(field_name)),
                         "uint64_t" => format!("{}", instance.get_u64(field_name)),
-                        name if field_template.is_primitive => panic!("unknown primitive {}", name),
+                        name if field_template.is_primitive => {
+                            unreachable!("unknown primitive {}", name)
+                        }
                         _ => {
                             instances_to_print.push_back(InstanceToPrint::FromField {
                                 address: None,
@@ -115,19 +114,48 @@ impl Blend {
                 // strings.
                 FieldInfo::ValueArray { dimensions_len, .. } => {
                     let value_str = match &field_template.type_name[..] {
-                        // Here we assume that every char array is a string, but blender also uses these for bitfields.
-                        // todo: add the other values
-                        "char" => instance.get_string(field_name),
+                        "char" => {
+                            let data = instance
+                                .data
+                                .get(field_template.data_start, field_template.data_len);
+
+                            // Some char arrays might be interpreted as strings if their first element is 0.
+                            if let Ok(string_data) = String::from_utf8(
+                                data.iter().take_while(|&&b| b != 0).cloned().collect(),
+                            ) {
+                                format!("\"{}\"", string_data)
+                            } else {
+                                format!("{:?}", instance.get_u8_vec(field_name))
+                            }
+                        }
+                        "int" => format!("{:?}", instance.get_i32_vec(field_name)),
+                        "short" => format!("{:?}", instance.get_i16_vec(field_name)),
+                        "float" => format!("{:?}", instance.get_f32_vec(field_name)),
+                        "double" => format!("{:?}", instance.get_f64_vec(field_name)),
+                        "int64_t" => format!("{:?}", instance.get_i64_vec(field_name)),
+                        "uint64_t" => format!("{:?}", instance.get_u64_vec(field_name)),
+                        name if field_template.is_primitive => {
+                            unreachable!("unknown primitive {}", name)
+                        }
                         _ => {
-                            return format!(
-                                "{}    {}: {}{:?} = [xyzabc]\n",
-                                ident_string, field_name, field_template.type_name, dimensions_len,
-                            )
+                            instances_to_print.push_back(InstanceToPrint::FromField {
+                                address: None,
+                                ident: ident + 1,
+                                print_id: *field_instance_print_id,
+                                field_template: field_template.clone(),
+                                instance: InstanceNumber::Many(
+                                    instance.get_vec(field_name).collect(),
+                                ),
+                            });
+
+                            *field_instance_print_id += 1;
+
+                            format!("{{{}}}", *field_instance_print_id - 1)
                         }
                     };
 
                     format!(
-                        "{}    {}: {}{:?} = \"{}\"\n",
+                        "{}    {}: {}{:?} = {}\n",
                         ident_string,
                         field_name,
                         field_template.type_name,
@@ -192,9 +220,7 @@ impl Blend {
                                 }
 
                                 seen_addresses.insert(*memory_address);
-
                                 *field_instance_print_id += 1;
-
                                 format!("{{{}}}", *field_instance_print_id - 1)
                             }
                         }
@@ -206,15 +232,54 @@ impl Blend {
                         ident_string, field_name, field_template.type_name, value_str,
                     )
                 }
-                //todo: 
+                FieldInfo::Pointer {
+                    indirection_count: 2,
+                } => match instance.get_ptr(field_template) {
+                    PointerInfo::Block(Block::Principal { memory_address, .. })
+                    | PointerInfo::Block(Block::Subsidiary { memory_address, .. }) => {
+                        //
+                        let addresses = {
+                            let mut r = Vec::new();
+                            for i in instance.get_vec(field_name) {
+                                r.push(i.memory_address());
+                            }
+                            r
+                        };
+                        format!(
+                            "{}    {}: **{} = @{} {:?}\n",
+                            ident_string,
+                            field_name,
+                            field_template.type_name,
+                            memory_address,
+                            addresses
+                        )
+                    }
+                    PointerInfo::Block(_) => unimplemented!(),
+                    PointerInfo::Invalid => String::from("invalid"),
+                    PointerInfo::Null => String::from("null"),
+                },
+                FieldInfo::FnPointer => {
+                    format!("{}    {}: fn() = invalid\n", ident_string, field_name)
+                }
+                //todo:
                 _ => format!(
-                    "{}    {}: {} = [xxx]\n",
-                    ident_string, field_name, field_template.type_name
+                    //"{}    {}: {} = [xxx]\n",
+                    "{}    {:?} [xxx]\n",
+                    ident_string,
+                    field_template, //field_name, field_template.type_name
                 ),
             }
         }
 
+        //handle.write(format!("{}", instances_to_print.len()).bytes()).expect("");
         while let Some(to_print) = instances_to_print.pop_front() {
+            writeln!(
+                &mut handle,
+                "{}\t\t{}",
+                instances_to_print.len(),
+                final_string.len()
+            )
+            .unwrap();
             match to_print {
                 InstanceToPrint::Root(instance) => match instance.data {
                     InstanceDataFormat::Block(block) => match block {
@@ -234,6 +299,37 @@ impl Blend {
                             ));
 
                             for (field_name, field_template) in &instance.fields {
+                                if field_name.starts_with("_pad") {
+                                    continue;
+                                }
+                                final_string.push_str(&field_to_string(
+                                    field_name,
+                                    field_template,
+                                    &instance,
+                                    0,
+                                    &mut field_instance_print_id,
+                                    &mut instances_to_print,
+                                    &mut seen_addresses,
+                                ));
+                            }
+                        }
+                        Block::Global {
+                            dna_index,
+                            memory_address,
+                            ..
+                        } => {
+                            let dna_struct = &self.blend.dna.structs[*dna_index];
+                            let dna_type = &self.blend.dna.types[dna_struct.type_index];
+
+                            final_string.push_str(&format!(
+                                "{} (code: GLOB) (address: {})\n",
+                                dna_type.name, memory_address
+                            ));
+
+                            for (field_name, field_template) in &instance.fields {
+                                if field_name.starts_with("_pad") {
+                                    continue;
+                                }
                                 final_string.push_str(&field_to_string(
                                     field_name,
                                     field_template,
@@ -267,6 +363,9 @@ impl Blend {
                     match instance {
                         InstanceNumber::Single(instance) => {
                             for (field_name, field_template) in &instance.fields {
+                                if field_name.starts_with("_pad") {
+                                    continue;
+                                }
                                 field_string.push_str(&field_to_string(
                                     field_name,
                                     field_template,
@@ -284,6 +383,9 @@ impl Blend {
                             if let Some(instance) = instances.first() {
                                 field_string.push_str(&format!("{}{{\n", ident_string));
                                 for (field_name, field_template) in &instance.fields {
+                                    if field_name.starts_with("_pad") {
+                                        continue;
+                                    }
                                     field_string.push_str(&field_to_string(
                                         field_name,
                                         field_template,
@@ -303,11 +405,17 @@ impl Blend {
                         }
                     }
 
-                    final_string = final_string.replacen(
+                    final_string.push_str(&format!(
+                        "{} #> {}",
+                        field_instance_print_id - 1,
+                        field_string
+                    ));
+
+                    /*final_string = final_string.replacen(
                         &format!("{{{}}}", print_id),
                         &field_string.trim_end(),
                         1,
-                    );
+                    );*/
                 }
             }
         }

@@ -16,7 +16,7 @@ pub enum InstanceDataFormat<'a> {
     Raw(&'a [u8]),
 }
 
-/// Pointers in the blend file are valid if the file contains another block with the correct address. They are invalid 
+/// Pointers in the blend file are valid if the file contains another block with the correct address. They are invalid
 /// if no block is found with the correct address.
 pub enum PointerInfo<'a> {
     Block(&'a Block),
@@ -25,20 +25,25 @@ pub enum PointerInfo<'a> {
 }
 
 impl<'a> InstanceDataFormat<'a> {
+    /// `get` accesses only a specifc slice of the underlying data.
+    pub fn get(&self, start: usize, len: usize) -> &'a [u8] {
+        &self.data()[start..start + len]
+    }
+
     /// `get` simplifies the access to the underlying data inside the `InstanceDataFormat`.
-    fn get(&self, start: usize, len: usize) -> &'a [u8] {
+    pub fn data(&self) -> &'a [u8] {
         match self {
             InstanceDataFormat::Block(block) => match block {
-                Block::Principal { data, .. } | Block::Subsidiary { data, .. } => {
-                    &data.data[start..start + len]
-                }
+                Block::Principal { data, .. }
+                | Block::Subsidiary { data, .. }
+                | Block::Global { data, .. } => &data.data[..],
                 _ => unimplemented!(),
             },
-            InstanceDataFormat::Raw(data) => &data[start..start + len],
+            InstanceDataFormat::Raw(data) => &data[..],
         }
     }
 
-    /// Returns the code of the underlying block, if it has one. 
+    /// Returns the code of the underlying block, if it has one.
     /// # Panics
     /// Panics if called on subsidiary blocks
     fn code(&self) -> Option<[u8; 2]> {
@@ -57,7 +62,8 @@ impl<'a> InstanceDataFormat<'a> {
         match self {
             InstanceDataFormat::Block(block) => match block {
                 Block::Principal { memory_address, .. }
-                | Block::Subsidiary { memory_address, .. } => Some(*memory_address),
+                | Block::Subsidiary { memory_address, .. }
+                | Block::Global { memory_address, .. } => Some(*memory_address),
                 _ => unimplemented!(),
             },
             InstanceDataFormat::Raw(_) => None,
@@ -83,7 +89,7 @@ pub struct FieldTemplate {
 }
 
 /// Represents a block of data inside the blend file. An `Instance` can be a camera, a mesh, a material, or anything
-/// else Blender uses internally, like material nodes, user settings or render options. An `Instance` is conceptually a 
+/// else Blender uses internally, like material nodes, user settings or render options. An `Instance` is conceptually a
 /// `struct`: a collection of named fields which can themselves be structs or primitives.
 #[derive(Clone)]
 pub struct Instance<'a> {
@@ -92,13 +98,29 @@ pub struct Instance<'a> {
     blend: &'a ParsedBlend,
     /// The raw binary data this `Instance` owns.
     pub data: InstanceDataFormat<'a>,
-    /// The fields of this `Instance`. 
+    /// The fields of this `Instance`.
     pub fields: LinkedHashMap<String, FieldTemplate>, //We use a LinkedHashMap here because we want to preserve insertion order
 }
 
 impl<'a> std::fmt::Debug for Instance<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Instance {{ fields: {:?} }}", self.fields)
+    }
+}
+
+//todo fix
+use std::fmt;
+
+impl fmt::Display for Instance<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //write!(f, "({}, {})", self.x, self.y)
+        let mut s = f.debug_struct("");
+
+        for (field_name, field) in &self.fields {
+            s.field(field_name, &field.type_name);
+        }
+
+        s.finish()
     }
 }
 
@@ -112,7 +134,7 @@ impl<'a> Instance<'a> {
     }
 
     /// If this `Instance` was created from a primary/root or subsidiary `Block` it will have a memory address. Blender
-    /// dumps its memory into the blend file when saving and the old memory addresses are used the recreate the 
+    /// dumps its memory into the blend file when saving and the old memory addresses are used the recreate the
     /// connections between blocks when loading the file again.
     /// # Panics
     /// Panics if the instance underlying data doesn't have an old memory address.
@@ -144,7 +166,7 @@ impl<'a> Instance<'a> {
     /// instead of this unless you know what you are doing. Check `Blend::to_string` for proper usage.
     /// # Panics
     /// Panics if field.info is not FieldInfo::Pointer
-    /// 
+    ///
     /// Panics if the block pointed by this field is not Block::Principal or Block::Subsidiary
     pub fn get_ptr(&self, field: &FieldTemplate) -> PointerInfo<'a> {
         match field.info {
@@ -318,7 +340,7 @@ impl<'a> Instance<'a> {
         self.get_value(name)
     }
 
-    /// `get_value_vec` abstracts accessing primitive arrays and is used by all `get_[]_vec` functions (`get_i8_vec`, 
+    /// `get_value_vec` abstracts accessing primitive arrays and is used by all `get_[]_vec` functions (`get_i8_vec`,
     /// `get_f32_vec`, etc).
     fn get_value_vec<T: AsRef<str>, U: BlendPrimitive>(&self, name: T) -> Vec<U> {
         let name = name.as_ref();
@@ -367,6 +389,14 @@ impl<'a> Instance<'a> {
         data.chunks(size_of::<U>())
             .map(|s| U::parse(s, self.blend.header.endianness))
             .collect()
+    }
+
+    pub fn get_u8_vec<T: AsRef<str>>(&self, name: T) -> Vec<u8> {
+        self.get_value_vec(name)
+    }
+
+    pub fn get_i8_vec<T: AsRef<str>>(&self, name: T) -> Vec<i8> {
+        self.get_value_vec(name)
     }
 
     pub fn get_i32_vec<T: AsRef<str>>(&self, name: T) -> Vec<i32> {
@@ -568,8 +598,44 @@ impl<'a> Instance<'a> {
                     cur = cur.get("next");
                 }
 
-                //todo: return a custom iterator 
+                //todo: return a custom iterator
                 instances.into_iter()
+            }
+            FieldInfo::ValueArray { len, .. } => {
+                if field.is_primitive {
+                    panic!(
+                        "field '{}' is a primitive array, call the appropriate method. ({:?})",
+                        name, field
+                    );
+                }
+
+                if let Some(r#struct) = &self
+                    .dna
+                    .structs
+                    .iter()
+                    .find(|s| s.type_index == field.type_index)
+                {
+                    let r#type = &self.dna.types[r#struct.type_index as usize];
+                    let fields = generate_fields(r#struct, r#type, self.dna, &self.blend.header);
+
+                    let data = self.data.data();
+                    let mut instances = Vec::new();
+                    for i in 0..len as usize {
+                        let data_len = (data.len() / len) as usize;
+                        let data_start = i * data_len;
+
+                        instances.push(Instance {
+                            dna: &self.dna,
+                            blend: &self.blend,
+                            data: InstanceDataFormat::Raw(&data[data_start..data_start + data_len]),
+                            fields: fields.clone(),
+                        });
+                    }
+
+                    instances.into_iter()
+                } else {
+                    unreachable!("no type information found")
+                }
             }
             FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
                 let pointer = self.get_ptr(&field);
@@ -682,7 +748,8 @@ impl<'a> Instance<'a> {
                         Block::Principal { data, .. } | Block::Subsidiary { data, .. } => {
                             match self.parse_ptr_address(&data.data[i * pointer_size..]) {
                                 None => {
-                                    panic!("field '{}' has a null element. '{:?}'", name, field)
+                                    //panic!("field '{}' has a null element. '{:?}'", name, field)
+                                    continue;
                                 }
                                 Some(address) => address,
                             }
@@ -732,12 +799,13 @@ impl<'a> Instance<'a> {
 }
 
 pub struct Blend {
-    /// `blend` field contains the header, file-blocks and dna of the .blend file, which are used in runtime to 
+    /// `blend` field contains the header, file-blocks and dna of the .blend file, which are used in runtime to
     /// interpret the blend file data.
     pub blend: ParsedBlend,
 }
 
 impl Blend {
+    //todo: return io::Result
     pub fn from_path<T: AsRef<Path>>(path: T) -> Blend {
         use std::{fs::File, io::Cursor};
 
@@ -750,9 +818,9 @@ impl Blend {
         Blend::new(Cursor::new(buffer))
     }
 
+    //todo: return result
     pub fn new<T: Read>(data: T) -> Blend {
         let blend = ParsedBlend::from_data(data).unwrap();
-
         Self { blend }
     }
 
@@ -761,12 +829,14 @@ impl Blend {
     /// have the correct type information in their headers, but their type is defined by the field that accesses them.
     /// You can only query for root blocks because subsidiary blocks have to be accessed through some field for their
     /// type to be known.
+    // todo: rename to root_blocks, return iterator
+    // todo: rename to root_instances?
     pub fn get_all_root_blocks(&self) -> Vec<Instance> {
         self.blend
             .blocks
             .iter()
             .filter_map(|block| match block {
-                Block::Principal { dna_index, .. } => {
+                Block::Principal { dna_index, .. } | Block::Global { dna_index, .. } => {
                     let dna_struct = &self.blend.dna.structs[*dna_index];
                     let dna_type = &self.blend.dna.types[dna_struct.type_index];
 
@@ -787,6 +857,7 @@ impl Blend {
 
     /// Root blocks have a code that tells us their type, "OB" for object, "ME" for mesh, "MA" for material, etc.
     /// You can use this method to filter for a single type of block.
+    // todo: return iterator
     pub fn get_by_code(&self, search_code: [u8; 2]) -> Vec<Instance> {
         self.blend
             .blocks
