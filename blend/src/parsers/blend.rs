@@ -106,7 +106,11 @@ pub fn version(input: &[u8]) -> Result<[u8; 3]> {
 }
 
 pub fn header(input: &[u8]) -> Result<Header> {
-    let (input, _) = tag("BLENDER")(input)?;
+    let (input, _) = match tag::<'_, _, _, BlendParseError>("BLENDER")(input) {
+        Ok(v) => v,
+        Err(_) => return Err(nom::Err::Failure(BlendParseError::BinaryFileNotSupported)),
+    };
+
     let (input, (pointer_size, endianness, version)) =
         tuple((pointer_size, endianness, version))(input)?;
 

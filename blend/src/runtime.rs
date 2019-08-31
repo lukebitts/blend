@@ -104,23 +104,32 @@ pub struct Instance<'a> {
 
 impl<'a> std::fmt::Debug for Instance<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Instance {{ fields: {:?} }}", self.fields)
+        f.debug_struct("Instance")
+            .field("fields", &self.fields)
+            .finish()
     }
 }
 
 //todo fix
 use std::fmt;
 
-impl fmt::Display for Instance<'_> {
+struct DebugInstance<'a>(&'a Instance<'a>);
+
+impl fmt::Debug for DebugInstance<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //write!(f, "({}, {})", self.x, self.y)
         let mut s = f.debug_struct("");
 
-        for (field_name, field) in &self.fields {
+        for (field_name, field) in &self.0.fields {
             s.field(field_name, &field.type_name);
         }
 
         s.finish()
+    }
+}
+
+impl fmt::Display for Instance<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#?}", DebugInstance(&self))
     }
 }
 

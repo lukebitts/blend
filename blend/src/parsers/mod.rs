@@ -55,6 +55,7 @@ pub enum BlendParseError {
     UnsupportedCountOnPrincipalBlock, // Assumption: principal blocks are always single blocks
     InvalidMemoryAddress,
     NoDnaBlockFound,
+    BinaryFileNotSupported,
 }
 
 impl ParseError<&[u8]> for BlendParseError {
