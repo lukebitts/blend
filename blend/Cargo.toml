@@ -8,3 +8,7 @@ edition = "2018"
 nom = "5.0.0"
 linked-hash-map = "0.5.2"
 byteorder = "1.3.2"
+
+[dev-dependencies]
+libflate = "0.1"
+walkdir = "2"

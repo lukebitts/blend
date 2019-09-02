@@ -121,7 +121,7 @@ fn main() -> Result<(), io::Error> {
     let mut objects = Vec::new();
 
     for obj in blend.get_by_code(*b"OB") {
-        if obj.is_valid("data") && obj.get("data").code() == *b"ME" {
+        if obj.is_valid("data") && obj.get("data").code()[0..=1] == *b"ME" {
             let loc = obj.get_f32_vec("loc");
             let rot = obj.get_f32_vec("rot");
             let size = obj.get_f32_vec("size");
