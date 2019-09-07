@@ -17,12 +17,6 @@ fn do_it(file_name: impl AsRef<str>) -> Result<(), io::Error> {
     let blend_path = base_path.join(format!("examples/blend_files/{}", file_name));
     let output_path = base_path.join(format!("examples/print_blend/output_{}.txt", file_name));
 
-    if blend_path
-        != path::PathBuf::from("/home/lucas/projects/leaf/blend/examples/blend_files/production/sets/rabbithole.blend")
-    {
-        return Ok(());
-    }
-
     println!("{}", blend_path.display());
     let mut file = File::open(blend_path)?;
     let mut data = Vec::new();
@@ -56,15 +50,15 @@ fn do_it(file_name: impl AsRef<str>) -> Result<(), io::Error> {
 }
 
 pub fn main() -> Result<(), io::Error> {
-    do_it("2_74.blend")?;
+    /*do_it("2_74.blend")?;
     do_it("2_77.blend")?;
     do_it("2_78.blend")?;
-    do_it("2_79.blend")?;
+    do_it("2_79.blend")?;*/
     do_it("2_80.blend")?;
 
     //do_it("snake_cubes.blend")?;
 
-    let base_path = path::PathBuf::from(
+    /*let base_path = path::PathBuf::from(
         env::var_os("CARGO_MANIFEST_DIR").expect("could not find cargo manifest dir"),
     );
     let production_path = base_path.join("examples/blend_files/production");
@@ -84,7 +78,7 @@ pub fn main() -> Result<(), io::Error> {
 
             do_it(file_name)?;
         }
-    }
+    }*/
 
     Ok(())
 }

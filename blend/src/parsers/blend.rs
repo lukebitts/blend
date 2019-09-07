@@ -134,13 +134,13 @@ pub fn block_header_code(input: &[u8]) -> Result<[u8; 4]> {
 }
 
 #[derive(Debug)]
-pub struct Blend {
+pub struct RawBlend {
     pub header: Header,
     pub blocks: Vec<Block>,
     pub dna: Dna,
 }
 
-impl Blend {
+impl RawBlend {
     /// Returns a new `Blend` instance from `data`.
     pub fn from_data<T: Read>(mut data: T) -> StdResult<Self, BlendParseError> {
         let mut buffer = Vec::new();
@@ -162,7 +162,7 @@ impl Blend {
         use std::fs::File;
 
         let file = File::open(path).map_err(BlendParseError::IoError)?;
-        Blend::from_data(file)
+        RawBlend::from_data(file)
     }
 }
 
@@ -289,7 +289,7 @@ impl BlendParseContext {
         }
     }
 
-    pub fn blend<'a, 'b>(&'a mut self, input: &'b [u8]) -> Result<'b, Blend>
+    pub fn blend<'a, 'b>(&'a mut self, input: &'b [u8]) -> Result<'b, RawBlend>
     where
         'b: 'a,
     {
@@ -312,7 +312,7 @@ impl BlendParseContext {
 
         Ok((
             input,
-            Blend {
+            RawBlend {
                 blocks,
                 dna,
                 header,

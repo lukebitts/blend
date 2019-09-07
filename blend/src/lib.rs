@@ -110,7 +110,6 @@
 //! ## Example
 //! 
 
-mod blend_to_string;
 pub mod parsers;
 pub mod runtime;
 

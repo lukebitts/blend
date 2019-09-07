@@ -37,8 +37,7 @@ pub enum FieldInfo {
     Value,
     ValueArray {
         len: usize,
-        //todo: rename to dimensions
-        dimensions_len: Vec<usize>,
+        dimensions: Vec<usize>,
     },
     Pointer {
         indirection_count: usize,
@@ -46,8 +45,7 @@ pub enum FieldInfo {
     PointerArray {
         indirection_count: usize,
         len: usize,
-        //todo: rename to dimensions
-        dimensions_len: Vec<usize>,
+        dimensions: Vec<usize>,
     },
     FnPointer,
 }
@@ -81,8 +79,8 @@ fn pointer(input: &str) -> Result<(&str, FieldInfo)> {
     let (input, name) = take_till(|c| c == '[')(input)?;
 
     if !input.is_empty() {
-        let (input, dimensions_len) = array_dimensions(input)?;
-        let len = dimensions_len.iter().product();
+        let (input, dimensions) = array_dimensions(input)?;
+        let len = dimensions.iter().product();
         Ok((
             input,
             (
@@ -90,7 +88,7 @@ fn pointer(input: &str) -> Result<(&str, FieldInfo)> {
                 FieldInfo::PointerArray {
                     indirection_count: asterisks.len(),
                     len,
-                    dimensions_len,
+                    dimensions,
                 },
             ),
         ))
@@ -110,15 +108,15 @@ fn pointer(input: &str) -> Result<(&str, FieldInfo)> {
 fn value(input: &str) -> Result<(&str, FieldInfo)> {
     let (input, name) = take_till(|c| c == '[')(input)?;
     if !input.is_empty() {
-        let (input, dimensions_len) = array_dimensions(input)?;
-        let len = dimensions_len.iter().product();
+        let (input, dimensions) = array_dimensions(input)?;
+        let len = dimensions.iter().product();
         Ok((
             input,
             (
                 name,
                 FieldInfo::ValueArray {
                     len,
-                    dimensions_len,
+                    dimensions,
                 },
             ),
         ))

@@ -1,4 +1,4 @@
-use blend::{Blend, Instance};
+use blend::{Blend, Instance, runtime::Validness};
 use std::{env, io, path};
 
 type Vertex = ([f32; 3], [f32; 3], [f32; 2]);
@@ -19,18 +19,18 @@ struct Object {
 }
 
 fn instance_to_mesh(mesh: Instance) -> Mesh {
-    if !mesh.is_valid("mpoly")
-        || !mesh.is_valid("mloop")
-        || !mesh.is_valid("mloopuv")
-        || !mesh.is_valid("mvert")
+    if mesh.is_valid("mpoly") != Validness::Valid
+        || mesh.is_valid("mloop") != Validness::Valid
+        || mesh.is_valid("mloopuv") != Validness::Valid
+        || mesh.is_valid("mvert") != Validness::Valid
     {
         panic!("Object mesh data is invalid");
     }
 
-    let faces = mesh.get_vec("mpoly").collect::<Vec<_>>();
-    let loops = mesh.get_vec("mloop").collect::<Vec<_>>();
-    let uvs = mesh.get_vec("mloopuv").collect::<Vec<_>>();
-    let verts = mesh.get_vec("mvert").collect::<Vec<_>>();
+    let faces = mesh.get_iter("mpoly").collect::<Vec<_>>();
+    let loops = mesh.get_iter("mloop").collect::<Vec<_>>();
+    let uvs = mesh.get_iter("mloopuv").collect::<Vec<_>>();
+    let verts = mesh.get_iter("mvert").collect::<Vec<_>>();
 
     let mut index_count = 0;
     let mut face_indice_count = 0;
@@ -121,7 +121,7 @@ fn main() -> Result<(), io::Error> {
     let mut objects = Vec::new();
 
     for obj in blend.get_by_code(*b"OB") {
-        if obj.is_valid("data") && obj.get("data").code()[0..=1] == *b"ME" {
+        if obj.is_valid("data").into() && obj.get("data").code()[0..=1] == *b"ME" {
             let loc = obj.get_f32_vec("loc");
             let rot = obj.get_f32_vec("rot");
             let size = obj.get_f32_vec("size");
@@ -137,7 +137,7 @@ fn main() -> Result<(), io::Error> {
         }
     }
 
-    //println!("{:#?}", objects);
+    println!("{:#?}", objects);
 
     Ok(())
 }

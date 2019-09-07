@@ -1,6 +1,8 @@
 use super::Endianness;
-use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
-use std::io::Cursor;
+use nom::number::complete::{
+    be_f32, be_f64, be_i16, be_i32, be_i64, be_i8, be_u16, be_u32, be_u64, le_f32, le_f64, le_i16,
+    le_i32, le_i64, le_i8, le_u16, le_u32, le_u64,
+};
 
 pub(crate) trait BlendPrimitive {
     fn parse(data: &[u8], endianness: Endianness) -> Self;
@@ -97,76 +99,78 @@ impl BlendPrimitive for i64 {
     }
 }
 
-pub fn parse_i8(slice: &[u8], _endianness: Endianness) -> i8 {
-    let mut rdr = Cursor::new(slice);
-    rdr.read_i8().unwrap()
+pub fn parse_i8(slice: &[u8], endianness: Endianness) -> i8 {
+    let (_, val) = match endianness {
+        Endianness::Little => le_i8::<()>(slice).expect("parse i8"),
+        Endianness::Big => be_i8::<()>(slice).expect("parse i8"),
+    };
+    val
 }
 
 pub fn parse_u8(slice: &[u8], _endianness: Endianness) -> u8 {
-    let mut rdr = Cursor::new(slice);
-    rdr.read_u8().unwrap()
+    *slice.get(0).expect("parse u8")
 }
 
 pub fn parse_u16(slice: &[u8], endianness: Endianness) -> u16 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_u16::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_u16::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_u16::<()>(slice).expect("parse u16"),
+        Endianness::Big => be_u16::<()>(slice).expect("parse u16"),
+    };
+    val
 }
 
 pub fn parse_i16(slice: &[u8], endianness: Endianness) -> i16 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_i16::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_i16::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_i16::<()>(slice).expect("parse i16"),
+        Endianness::Big => be_i16::<()>(slice).expect("parse i16"),
+    };
+    val
 }
 
 pub fn parse_i32(slice: &[u8], endianness: Endianness) -> i32 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_i32::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_i32::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_i32::<()>(slice).expect("parse i32"),
+        Endianness::Big => be_i32::<()>(slice).expect("parse i32"),
+    };
+    val
 }
 
 pub fn parse_f32(slice: &[u8], endianness: Endianness) -> f32 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_f32::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_f32::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_f32::<()>(slice).expect("parse f32"),
+        Endianness::Big => be_f32::<()>(slice).expect("parse f32"),
+    };
+    val
 }
 
 pub fn parse_f64(slice: &[u8], endianness: Endianness) -> f64 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_f64::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_f64::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_f64::<()>(slice).expect("parse f64"),
+        Endianness::Big => be_f64::<()>(slice).expect("parse f64"),
+    };
+    val
 }
 
 pub fn parse_u32(slice: &[u8], endianness: Endianness) -> u32 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_u32::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_u32::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_u32::<()>(slice).expect("parse u32"),
+        Endianness::Big => be_u32::<()>(slice).expect("parse u32"),
+    };
+    val
 }
 
 pub fn parse_i64(slice: &[u8], endianness: Endianness) -> i64 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_i64::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_i64::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_i64::<()>(slice).expect("parse i64"),
+        Endianness::Big => be_i64::<()>(slice).expect("parse i64"),
+    };
+    val
 }
 
 pub fn parse_u64(slice: &[u8], endianness: Endianness) -> u64 {
-    let mut rdr = Cursor::new(slice);
-    match endianness {
-        Endianness::Little => rdr.read_u64::<LittleEndian>().unwrap(),
-        Endianness::Big => rdr.read_u64::<BigEndian>().unwrap(),
-    }
+    let (_, val) = match endianness {
+        Endianness::Little => le_u64::<()>(slice).expect("parse u64"),
+        Endianness::Big => be_u64::<()>(slice).expect("parse u64"),
+    };
+    val
 }
