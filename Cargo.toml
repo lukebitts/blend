@@ -1,12 +1,13 @@
-cargo-features = ["profile-overrides"]
+[package]
+name = "blend"
+version = "0.6.0"
+authors = ["Lucas Bittencourt <lbittencs@gmail.com>"]
+edition = "2018"
 
-[workspace]
-members = [
-    #"clever", "common", "client", "server", 
-    "blend"] 
+[dependencies]
+nom = "5.0.0"
+linked-hash-map = "0.5.2"
 
-[profile.dev.overrides."*"]
-opt-level = 2
-
-#profile.dev.overrides.client]
-#opt-level = 0
+[dev-dependencies]
+libflate = "0.1"
+walkdir = "2"

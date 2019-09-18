@@ -50,11 +50,11 @@ fn do_it(file_name: impl AsRef<str>) -> Result<(), io::Error> {
 }
 
 pub fn main() -> Result<(), io::Error> {
-    /*do_it("2_74.blend")?;
-    do_it("2_77.blend")?;
+    do_it("2_74.blend")?;
+    /*do_it("2_77.blend")?;
     do_it("2_78.blend")?;
-    do_it("2_79.blend")?;*/
-    do_it("2_80.blend")?;
+    do_it("2_79.blend")?;
+    do_it("2_80.blend")?;*/
 
     //do_it("snake_cubes.blend")?;
 
