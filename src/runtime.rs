@@ -166,7 +166,7 @@ fn fmt_instance(
                     _ if field.is_primitive => panic!("unknown primitive"),
                     _ => {
                         if field.type_name == "ListBase" {
-                            if inst.is_valid(field_name).into() {
+                            if inst.is_valid(field_name) {
                                 let list_base_instance = inst.get_iter(field_name).next().unwrap();
                                 writeln!(
                                     f,
@@ -257,7 +257,7 @@ fn fmt_instance(
                     .iter()
                     .any(|n| n == field_name)
                 {
-                    if inst.is_valid(field_name).into() {
+                    if inst.is_valid(field_name) {
                         writeln!(
                             f,
                             "{}    {}: {} = (@{});",
@@ -277,96 +277,77 @@ fn fmt_instance(
                         )?
                     }
                 //} else if inst.is_valid(field_name) {
-                } else {
-                    match inst.is_valid(field_name) {
-                        Validness::Valid => {
-                            //let ptr_field = &inst.fields[field_name];
-                            let ptr_inst = inst.get(field_name);
-                            //assert!(!seen_addresses.contains(&ptr_inst.memory_address()));
-                            if ptr_inst.data.code().is_none()
-                                && !seen_addresses.contains(&inst.get(field_name).memory_address())
-                            {
-                                if ptr_inst.type_name == "Link" {
-                                    writeln!(
-                                        f,
-                                        "{}    {}: {}* = (not enough type information);",
-                                        ident_str, field_name, field.type_name
-                                    )?
-                                } else {
-                                    seen_addresses.insert(ptr_inst.memory_address());
-                                    match ptr_inst.data {
-                                        InstanceDataFormat::Block(block) => match block {
-                                            Block::Principal { data, .. }
-                                            | Block::Subsidiary { data, .. } => {
-                                                if data.count > 1 {
-                                                    writeln!(
-                                                        f,
-                                                        "{}    {}: {}[{}] = [",
-                                                        ident_str,
-                                                        field_name,
-                                                        field.type_name,
-                                                        data.count
-                                                    )?;
-                                                    for p in inst.get_iter(field_name) {
-                                                        //write!(f, "{}    {}: {} = ", ident_str, field_name, field.type_name)?;
-                                                        write!(f, "{}        ", ident_str)?;
-                                                        fmt_instance(
-                                                            seen_addresses,
-                                                            f,
-                                                            &p,
-                                                            ident + 2,
-                                                        )?;
-                                                        break;
-                                                    }
-                                                    writeln!(f, "{}    ];", ident_str)?;
-                                                } else {
-                                                    write!(
-                                                        f,
-                                                        "{}    {}: {} = ",
-                                                        ident_str, field_name, field.type_name
-                                                    )?;
-                                                    fmt_instance(
-                                                        seen_addresses,
-                                                        f,
-                                                        &ptr_inst,
-                                                        ident + 1,
-                                                    )?;
-                                                }
+                } else if inst.is_valid(field_name) {
+                    //let ptr_field = &inst.fields[field_name];
+                    let ptr_inst = inst.get(field_name);
+                    //assert!(!seen_addresses.contains(&ptr_inst.memory_address()));
+                    if ptr_inst.data.code().is_none()
+                        && !seen_addresses.contains(&inst.get(field_name).memory_address())
+                    {
+                        if ptr_inst.type_name == "Link" {
+                            writeln!(
+                                f,
+                                "{}    {}: {}* = (not enough type information);",
+                                ident_str, field_name, field.type_name
+                            )?
+                        } else {
+                            seen_addresses.insert(ptr_inst.memory_address());
+                            match ptr_inst.data {
+                                InstanceDataFormat::Block(block) => match block {
+                                    Block::Principal { data, .. }
+                                    | Block::Subsidiary { data, .. } => {
+                                        if data.count > 1 {
+                                            writeln!(
+                                                f,
+                                                "{}    {}: {}[{}] = [",
+                                                ident_str, field_name, field.type_name, data.count
+                                            )?;
+                                            for p in inst.get_iter(field_name) {
+                                                //write!(f, "{}    {}: {} = ", ident_str, field_name, field.type_name)?;
+                                                write!(f, "{}        ", ident_str)?;
+                                                fmt_instance(seen_addresses, f, &p, ident + 2)?;
+                                                break;
                                             }
-                                            _ => unimplemented!(),
-                                        },
-                                        _ => unimplemented!(),
+                                            writeln!(f, "{}    ];", ident_str)?;
+                                        } else {
+                                            write!(
+                                                f,
+                                                "{}    {}: {} = ",
+                                                ident_str, field_name, field.type_name
+                                            )?;
+                                            fmt_instance(seen_addresses, f, &ptr_inst, ident + 1)?;
+                                        }
                                     }
-                                }
-                            } else {
-                                writeln!(
-                                    f,
-                                    "{}    {}: {} = (@{});",
-                                    ident_str,
-                                    field_name,
-                                    field.type_name,
-                                    inst.parse_ptr_address(
-                                        &inst.data.get(field.data_start, field.data_len)
-                                    )
-                                    .unwrap()
-                                )?
+                                    _ => unimplemented!(),
+                                },
+                                _ => unimplemented!(),
                             }
                         }
-                        Validness::InvalidType => {
-                            //
-                        }
-                        Validness::Invalid => writeln!(
+                    } else {
+                        writeln!(
                             f,
-                            "{}    {}: {} = null;",
-                            ident_str, field_name, field.type_name
-                        )?,
+                            "{}    {}: {} = (@{});",
+                            ident_str,
+                            field_name,
+                            field.type_name,
+                            inst.parse_ptr_address(
+                                &inst.data.get(field.data_start, field.data_len)
+                            )
+                            .unwrap()
+                        )?
                     }
+                } else {
+                    writeln!(
+                        f,
+                        "{}    {}: {} = null;",
+                        ident_str, field_name, field.type_name
+                    )?;
                 }
             }
             FieldInfo::Pointer {
                 indirection_count: 2,
             } => {
-                if inst.is_valid(field_name).into() {
+                if inst.is_valid(field_name) {
                     let mut instances = inst.get_iter(field_name);
                     write!(
                         f,
@@ -427,7 +408,7 @@ impl fmt::Display for Instance<'_> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+/*#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Validness {
     Valid,
     InvalidType,
@@ -442,7 +423,7 @@ impl Into<bool> for Validness {
             Validness::Invalid => false,
         }
     }
-}
+}*/
 
 fn parse_ptr_address(
     data: &[u8],
@@ -527,11 +508,11 @@ impl<'a> Instance<'a> {
     }
 
     /// Tests whether a field is valid and can be accessed using the `get` methods without panicking.
-    pub fn is_valid<T: AsRef<str>>(&self, name: T) -> Validness {
+    pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
         let name = name.as_ref();
 
         if !self.fields.contains_key(name) {
-            return Validness::Invalid;
+            return false;
         }
 
         let field = self.expect_field(name);
@@ -549,16 +530,9 @@ impl<'a> Instance<'a> {
                 let pointer = self.get_ptr(field);
 
                 match pointer {
-                    PointerInfo::Null | PointerInfo::Invalid => Validness::Invalid,
+                    PointerInfo::Null | PointerInfo::Invalid => false,
                     PointerInfo::Block(block) => match block {
-                        Block::Principal { .. } => Validness::Valid,
-                        Block::Subsidiary { dna_index, .. } => {
-                            if field.type_index <= 12 && *dna_index <= 12 {
-                                Validness::InvalidType
-                            } else {
-                                Validness::Valid
-                            }
-                        }
+                        Block::Principal { .. } | Block::Subsidiary { .. } => true,
                         _ => unimplemented!(),
                     },
                 }
@@ -568,7 +542,7 @@ impl<'a> Instance<'a> {
 
                 let block = match pointer {
                     PointerInfo::Block(block) => block,
-                    PointerInfo::Null | PointerInfo::Invalid => return Validness::Invalid,
+                    PointerInfo::Null | PointerInfo::Invalid => return false,
                 };
 
                 let pointer_size = self.blend.header.pointer_size.bytes_num();
@@ -594,37 +568,30 @@ impl<'a> Instance<'a> {
                                         }
                                         _ => false,
                                     }) {
-                                        return Validness::Invalid;
+                                        return false;
                                     } else {
                                         continue;
                                     }
                                 }
-                                None => return Validness::Invalid,
+                                None => return false,
                             }
                         }
                         _ => unimplemented!(),
                     }
                 }
-                Validness::Valid
+                true
             }
-            FieldInfo::FnPointer => Validness::Invalid,
-            FieldInfo::PointerArray { .. } => {
-                //todo: fix
-                panic!("")
-            }
+            FieldInfo::FnPointer => false,
+            FieldInfo::PointerArray { .. } => unimplemented!(), //todo: fix
             FieldInfo::Value => {
                 if field.type_name == "ListBase" {
                     let instance = self.get(name);
-                    if instance.is_valid("first").into() && instance.is_valid("last").into() {
-                        Validness::Valid
-                    } else {
-                        Validness::Invalid
-                    }
+                    instance.is_valid("first") && instance.is_valid("last")
                 } else {
-                    Validness::Valid
+                    true
                 }
             }
-            FieldInfo::ValueArray { .. } => Validness::Valid,
+            FieldInfo::ValueArray { .. } => true,
             _ => panic!(
                 "is_valid called for unknown field '{}'. ({:?})",
                 name, field,
@@ -924,7 +891,7 @@ impl<'a> Instance<'a> {
                         break;
                     }
 
-                    while cur.is_valid("next") != Validness::Valid {
+                    while !cur.is_valid("next") {
                         cur = cur.get(cur.fields.keys().next().expect(""));
                     }
 
@@ -1077,7 +1044,7 @@ impl<'a> Instance<'a> {
                     let block = self.blend.blocks.iter().find(|b| match b {
                         Block::Principal { memory_address, .. }
                         | Block::Subsidiary { memory_address, .. } => *memory_address == address,
-                        _ => false //unimplemented!("{:?} {:?}", b, field),
+                        _ => false, //unimplemented!("{:?} {:?}", b, field),
                     });
 
                     match block {
@@ -1134,7 +1101,7 @@ impl<'a> Instance<'a> {
                     let block = self.blend.blocks.iter().find(|b| match b {
                         Block::Principal { memory_address, .. }
                         | Block::Subsidiary { memory_address, .. } => *memory_address == address,
-                        _ => false //unimplemented!("{:?} {:?}", b, field),
+                        _ => false, //unimplemented!("{:?} {:?}", b, field),
                     });
 
                     match block {
@@ -1244,7 +1211,7 @@ impl<'a> Instance<'a> {
                             *ended = true;
                             Some(ret)
                         } else {
-                            while cur.is_valid("next") != Validness::Valid {
+                            while !cur.is_valid("next") {
                                 *cur = cur.get(cur.fields.keys().next().expect(""));
                             }
                             *cur = cur.get("next");
