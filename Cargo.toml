@@ -3,6 +3,13 @@ name = "blend"
 version = "0.6.0"
 authors = ["Lucas Bittencourt <lbittencs@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "A parser and runtime for Blender's .blend files."
+homepage = "https://github.com/lukebitts/blend"
+documentation = "https://docs.rs/blend/"
+repository = "https://github.com/lukebitts/blend"
+categories = ["parser-implementations"]
+keywords = ["blend", "blender"]
 
 [dependencies]
 nom = "5.0.0"

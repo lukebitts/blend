@@ -6,6 +6,7 @@ use crate::parsers::{
     Endianness, PointerSize,
 };
 use linked_hash_map::LinkedHashMap;
+use std::fmt;
 use std::{io::Read, mem::size_of, num::NonZeroU64, path::Path};
 
 /// An `Instance`'s data can be a reference to a `Block` if the `Instance` represents a root or subsidiary block,
@@ -25,7 +26,7 @@ pub enum PointerInfo<'a> {
 }
 
 impl<'a> InstanceDataFormat<'a> {
-    /// `get` accesses only a specifc slice of the underlying data.
+    /// `get` accesses only a specific slice of the underlying data.
     pub fn get(&self, start: usize, len: usize) -> &'a [u8] {
         &self.data()[start..start + len]
     }
@@ -113,9 +114,6 @@ impl<'a> std::fmt::Debug for Instance<'a> {
     }
 }
 
-//todo fix
-use std::fmt;
-
 #[allow(clippy::cognitive_complexity)]
 fn fmt_instance(
     seen_addresses: &mut std::collections::HashSet<NonZeroU64>,
@@ -167,28 +165,30 @@ fn fmt_instance(
                     _ => {
                         if field.type_name == "ListBase" {
                             if inst.is_valid(field_name) {
-                                let list_base_instance = inst.get_iter(field_name).next().unwrap();
-                                writeln!(
-                                    f,
-                                    "ListBase<{}>[#?] = [",
-                                    list_base_instance.type_name,
-                                    //list_base_instances.len()
-                                )?;
+                                let list_base_instance = inst
+                                    .get_iter(field_name)
+                                    .next()
+                                    .expect("a valid ListBase always has at least one element");
+                                writeln!(f, "ListBase<{}>[#?] = [", list_base_instance.type_name)?;
                                 if list_base_instance.data.code().is_none() {
-                                    for i in Some(list_base_instance) {
-                                        if !seen_addresses.contains(&i.memory_address()) {
-                                            seen_addresses.insert(i.memory_address());
-                                            write!(f, "{}        ", ident_str)?;
-                                            fmt_instance(seen_addresses, f, &i, ident + 2)?;
-                                        } else {
-                                            writeln!(
-                                                f,
-                                                "{}        @{},",
-                                                ident_str,
-                                                i.memory_address()
-                                            )?;
-                                        }
-                                        break;
+                                    if !seen_addresses
+                                        .contains(&list_base_instance.memory_address())
+                                    {
+                                        seen_addresses.insert(list_base_instance.memory_address());
+                                        write!(f, "{}        ", ident_str)?;
+                                        fmt_instance(
+                                            seen_addresses,
+                                            f,
+                                            &list_base_instance,
+                                            ident + 2,
+                                        )?;
+                                    } else {
+                                        writeln!(
+                                            f,
+                                            "{}        @{},",
+                                            ident_str,
+                                            list_base_instance.memory_address()
+                                        )?;
                                     }
                                 } else {
                                     unimplemented!()
@@ -240,11 +240,9 @@ fn fmt_instance(
                     _ if field.is_primitive => panic!("unknown primitive"),
                     _ => {
                         writeln!(f, "[")?;
-                        let instances = inst.get_iter(field_name);
-                        for i in instances {
+                        if let Some(i) = inst.get_iter(field_name).next() {
                             write!(f, "{}        ", ident_str)?;
                             fmt_instance(seen_addresses, f, &i, ident + 2)?;
-                            break;
                         }
                         writeln!(f, "{}    ];", ident_str)?;
                     }
@@ -302,11 +300,9 @@ fn fmt_instance(
                                                 "{}    {}: {}[{}] = [",
                                                 ident_str, field_name, field.type_name, data.count
                                             )?;
-                                            for p in inst.get_iter(field_name) {
-                                                //write!(f, "{}    {}: {} = ", ident_str, field_name, field.type_name)?;
+                                            if let Some(p) = inst.get_iter(field_name).next() {
                                                 write!(f, "{}        ", ident_str)?;
                                                 fmt_instance(seen_addresses, f, &p, ident + 2)?;
-                                                break;
                                             }
                                             writeln!(f, "{}    ];", ident_str)?;
                                         } else {
@@ -408,23 +404,6 @@ impl fmt::Display for Instance<'_> {
     }
 }
 
-/*#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Validness {
-    Valid,
-    InvalidType,
-    Invalid,
-}
-
-impl Into<bool> for Validness {
-    fn into(self) -> bool {
-        match self {
-            Validness::Valid => true,
-            Validness::InvalidType => false,
-            Validness::Invalid => false,
-        }
-    }
-}*/
-
 fn parse_ptr_address(
     data: &[u8],
     pointer_size: PointerSize,
@@ -475,13 +454,12 @@ impl<'a> Instance<'a> {
         )
     }
 
-    /// Used internally to get a block behind a pointer, use `Instance::get` or `Instance::get_vec`
-    /// instead of this unless you know what you are doing. Check `Blend::to_string` for proper usage.
+    /// Used internally to get a block behind a pointer.
     /// # Panics
     /// Panics if field.info is not FieldInfo::Pointer
     ///
     /// Panics if the block pointed by this field is not Block::Principal or Block::Subsidiary
-    pub fn get_ptr(&self, field: &FieldTemplate) -> PointerInfo<'a> {
+    fn get_ptr(&self, field: &FieldTemplate) -> PointerInfo<'a> {
         match field.info {
             FieldInfo::Pointer { .. } => {}
             _ => panic!(
@@ -507,7 +485,8 @@ impl<'a> Instance<'a> {
         }
     }
 
-    /// Tests whether a field is valid and can be accessed using the `get` methods without panicking.
+    /// Tests whether a field is valid and can be accessed using the `get` methods without panicking. Which `get`
+    /// method you have to use depends on the field type.
     pub fn is_valid<T: AsRef<str>>(&self, name: T) -> bool {
         let name = name.as_ref();
 
@@ -752,6 +731,16 @@ impl<'a> Instance<'a> {
         self.get_value_vec(name)
     }
 
+    /// ## Example
+    ///
+    /// ```rust
+    /// let obj = blend.get_by_code(*b"OB").next().unwrap();
+    /// let name = obj.get("id").get_string("name");
+    /// ```
+    ///
+    /// ## Panics
+    ///
+    /// * Panics if the field cannot be read as a string.
     pub fn get_string<T: AsRef<str>>(&self, name: T) -> String {
         let name = name.as_ref();
         let field = self.expect_field(name);
@@ -775,6 +764,19 @@ impl<'a> Instance<'a> {
         }
     }
 
+    /// Used to access fields which are structs.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// let obj = blend.get_by_code(*b"OB").next().unwrap();
+    /// let id = obj.get("id");
+    /// let data = obj.get("data");
+    /// ```
+    ///
+    /// ## Panics
+    ///
+    /// * Panics if the field is not a valid struct.
     pub fn get<T: AsRef<str>>(&self, name: T) -> Instance<'a> {
         let name = name.as_ref();
         let field = self.expect_field(name);
@@ -829,7 +831,6 @@ impl<'a> Instance<'a> {
                             field
                         );
 
-                        //todo: rename to dna_struct etc
                         let r#struct = &self.dna.structs[*dna_index];
                         let r#type = &self.dna.types[r#struct.type_index];
 
@@ -866,297 +867,18 @@ impl<'a> Instance<'a> {
         }
     }
 
-    //todo: return a vec here?
-    #[allow(clippy::cognitive_complexity)]
-    pub fn get_vec<T: AsRef<str>>(&self, name: T) -> impl Iterator<Item = Instance<'a>> {
-        let name = name.as_ref();
-        let field = self.expect_field(name);
-
-        match field.info {
-            FieldInfo::Value => {
-                if field.type_name != "ListBase" {
-                    panic!("field '{}' cannot be read as a list. ({:?})", name, field)
-                }
-
-                let list_instance = self.get(name);
-
-                let last_address = list_instance.get("last").memory_address();
-                let mut cur = list_instance.get("first");
-                let mut instances = Vec::new();
-
-                loop {
-                    instances.push(cur.clone());
-
-                    if cur.memory_address() == last_address {
-                        break;
-                    }
-
-                    while !cur.is_valid("next") {
-                        cur = cur.get(cur.fields.keys().next().expect(""));
-                    }
-
-                    cur = cur.get("next");
-                }
-
-                //todo: return a custom iterator
-                instances.into_iter()
-            }
-            FieldInfo::ValueArray { len, .. } => {
-                if field.is_primitive {
-                    panic!(
-                        "field '{}' is a primitive array, call the appropriate method. ({:?})",
-                        name, field
-                    );
-                }
-
-                if let Some(r#struct) = &self
-                    .dna
-                    .structs
-                    .iter()
-                    .find(|s| s.type_index == field.type_index)
-                {
-                    let r#type = &self.dna.types[r#struct.type_index as usize];
-                    let fields = generate_fields(r#struct, r#type, self.dna, &self.blend.header);
-
-                    let data = self.data.data();
-                    let mut instances = Vec::new();
-                    for i in 0..len as usize {
-                        let data_len = (data.len() / len) as usize;
-                        let data_start = i * data_len;
-
-                        instances.push(Instance {
-                            dna: &self.dna,
-                            blend: &self.blend,
-                            type_name: r#type.name.clone(),
-                            data: InstanceDataFormat::Raw(&data[data_start..data_start + data_len]),
-                            fields: fields.clone(),
-                        });
-                    }
-
-                    instances.into_iter()
-                } else {
-                    unreachable!("no type information found")
-                }
-            }
-            FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
-                let pointer = self.get_ptr(&field);
-                let block = match pointer {
-                    PointerInfo::Block(block) => block,
-                    PointerInfo::Null | PointerInfo::Invalid => panic!(
-                        "field '{}' is null or doesn't point to a valid block. ({:?})",
-                        name, field
-                    ),
-                };
-
-                match block {
-                    Block::Principal {
-                        data, dna_index, ..
-                    } => {
-                        let r#struct = &self.dna.structs[*dna_index];
-                        let r#type = &self.dna.types[r#struct.type_index];
-
-                        let fields =
-                            generate_fields(r#struct, r#type, &self.dna, &self.blend.header);
-
-                        let mut instances = Vec::new();
-                        for i in 0..data.count as usize {
-                            let data_len = (data.data.len() / data.count) as usize;
-                            let data_start = i * data_len;
-
-                            instances.push(Instance {
-                                dna: &self.dna,
-                                blend: &self.blend,
-                                type_name: r#type.name.clone(),
-                                data: InstanceDataFormat::Raw(
-                                    &data.data[data_start..data_start + data_len],
-                                ),
-                                fields: fields.clone(),
-                            });
-                        }
-
-                        instances.into_iter()
-                    }
-                    Block::Subsidiary {
-                        data, dna_index, ..
-                    } => {
-                        let (fields, r#type) = generate_subsidiary_fields(
-                            &self.dna,
-                            &self.blend.header,
-                            &field,
-                            *dna_index,
-                        )
-                        .expect("");
-
-                        let mut instances = Vec::new();
-                        for i in 0..data.count as usize {
-                            let data_len = (data.data.len() / data.count) as usize;
-                            let data_start = i * data_len;
-
-                            instances.push(Instance {
-                                dna: &self.dna,
-                                blend: &self.blend,
-                                type_name: r#type.name.clone(),
-                                data: InstanceDataFormat::Raw(
-                                    &data.data[data_start..data_start + data_len],
-                                ),
-                                fields: fields.clone(),
-                            });
-                        }
-
-                        instances.into_iter()
-                    }
-                    _ => unimplemented!(),
-                }
-            }
-            FieldInfo::Pointer { indirection_count } if indirection_count == 2 => {
-                let pointer = self.get_ptr(&field);
-                let block = match pointer {
-                    PointerInfo::Block(block) => block,
-                    PointerInfo::Null | PointerInfo::Invalid => panic!(
-                        "field '{}' is null or doesn't point to a valid block. ({:?})",
-                        name, field
-                    ),
-                };
-
-                let pointer_size = self.blend.header.pointer_size.bytes_num();
-                let pointer_count = match block {
-                    Block::Principal { data, .. } | Block::Subsidiary { data, .. } => {
-                        data.data.len() / pointer_size
-                    }
-                    _ => unimplemented!(),
-                };
-
-                let mut pointers = Vec::new();
-                for i in 0..pointer_count {
-                    let address = match block {
-                        Block::Principal { data, .. } | Block::Subsidiary { data, .. } => {
-                            match self.parse_ptr_address(&data.data[i * pointer_size..]) {
-                                None => {
-                                    //panic!("field '{}' has a null element. '{:?}'", name, field)
-                                    continue;
-                                }
-                                Some(address) => address,
-                            }
-                        }
-                        _ => unimplemented!(),
-                    };
-
-                    let block = self.blend.blocks.iter().find(|b| match b {
-                        Block::Principal { memory_address, .. }
-                        | Block::Subsidiary { memory_address, .. } => *memory_address == address,
-                        _ => false, //unimplemented!("{:?} {:?}", b, field),
-                    });
-
-                    match block {
-                        Some(Block::Principal { dna_index, .. }) => {
-                            let r#struct = &self.dna.structs[*dna_index];
-                            let r#type = &self.dna.types[r#struct.type_index];
-
-                            let fields =
-                                generate_fields(r#struct, r#type, &self.dna, &self.blend.header);
-
-                            pointers.push(Instance {
-                                dna: &self.dna,
-                                blend: &self.blend,
-                                type_name: r#type.name.clone(),
-                                data: InstanceDataFormat::Block(
-                                    block.expect("we are sure block is some here"),
-                                ),
-                                fields,
-                            });
-                        }
-                        Some(_) => unimplemented!(),
-                        None => {
-                            continue;
-                            //panic!("field '{}' has an invalid element. ({:?})", name, field);
-                        }
-                    }
-                }
-
-                pointers.into_iter()
-            }
-            FieldInfo::PointerArray {
-                len,
-                indirection_count,
-                ..
-            } if indirection_count == 1 => {
-                let data = self.data.get(field.data_start, field.data_len);
-                let pointer_size = self.blend.header.pointer_size.bytes_num();
-                let pointer_count = data.len() / pointer_size;
-
-                assert_eq!(len, pointer_count);
-
-                let mut pointers = Vec::new();
-                for i in 0..pointer_count {
-                    let address = {
-                        match self.parse_ptr_address(&data[i * pointer_size..]) {
-                            None => {
-                                //panic!("field '{}' has a null element. '{:?}'", name, field);
-                                continue;
-                            }
-                            Some(address) => address,
-                        }
-                    };
-
-                    let block = self.blend.blocks.iter().find(|b| match b {
-                        Block::Principal { memory_address, .. }
-                        | Block::Subsidiary { memory_address, .. } => *memory_address == address,
-                        _ => false, //unimplemented!("{:?} {:?}", b, field),
-                    });
-
-                    match block {
-                        Some(Block::Principal { dna_index, .. }) => {
-                            let r#struct = &self.dna.structs[*dna_index];
-                            let r#type = &self.dna.types[r#struct.type_index];
-
-                            let fields =
-                                generate_fields(r#struct, r#type, &self.dna, &self.blend.header);
-
-                            pointers.push(Instance {
-                                dna: &self.dna,
-                                blend: &self.blend,
-                                type_name: r#type.name.clone(),
-                                data: InstanceDataFormat::Block(
-                                    block.expect("we are sure block is some here"),
-                                ),
-                                fields,
-                            });
-                        }
-                        Some(Block::Subsidiary { dna_index, .. }) => {
-                            if let Some((fields, r#type)) = generate_subsidiary_fields(
-                                &self.dna,
-                                &self.blend.header,
-                                &field,
-                                *dna_index,
-                            ) {
-                                pointers.push(Instance {
-                                    dna: &self.dna,
-                                    blend: &self.blend,
-                                    type_name: r#type.name.clone(),
-                                    data: InstanceDataFormat::Block(
-                                        block.expect("we are sure block is some here"),
-                                    ),
-                                    fields,
-                                });
-                            }
-                        }
-                        Some(_) => unimplemented!(),
-                        None => {
-                            continue;
-                            //panic!("field '{}' has an invalid element. ({:?})", name, field);
-                        }
-                    }
-                }
-
-                pointers.into_iter()
-            }
-            _ => panic!(
-                "field '{}' cannot be read as a list of structs ({:?})",
-                name, field
-            ),
-        }
-    }
-
+    /// Used to access fields which are lists of structs.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// let obj = blend.get_by_code(*b"OB").next().unwrap();
+    /// let materials = obj.get_iter("mat").collect::<Vec<_>>();
+    /// ```
+    ///
+    /// ## Panics
+    ///
+    /// * Panics if the field is not a valid list of structs.
     pub fn get_iter<T: AsRef<str>>(&self, name: T) -> impl Iterator<Item = Instance<'a>> {
         let name = name.as_ref();
         let field = self.expect_field(name);

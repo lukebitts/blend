@@ -58,7 +58,7 @@ pub enum BlendParseError {
     /// Returned when the file is incomplete.
     NotEnoughData,
     /// The known block codes are `b"REND"`, `b"TEST"`, `b"GLOB"`, `b"DATA"` and any two-digit code
-    /// like `b"OB\0\0" for objects. Anything different from that returns `UnknownBlockCode`
+    /// like `b"OB\0\0"` for objects. Anything different from that returns `UnknownBlockCode`
     UnknownBlockCode,
     /// Principal blocks are assumed to never be lists even though it is possible. This is done
     /// to simplify the API. No version of a blend file was found where this isn't true.

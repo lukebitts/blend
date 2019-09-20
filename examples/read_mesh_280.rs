@@ -1,5 +1,5 @@
-use blend::{Blend, Instance, runtime::Validness};
-use std::{env, io, path};
+use blend::{Blend, Instance};
+use std::{env, path};
 
 type Vertex = ([f32; 3], [f32; 3], [f32; 2]);
 type Face = [Vertex; 3];
@@ -18,13 +18,14 @@ struct Object {
     mesh: Mesh,
 }
 
-fn instance_to_mesh(mesh: Instance) -> Mesh {
-    if mesh.is_valid("mpoly") != Validness::Valid
-        || mesh.is_valid("mloop") != Validness::Valid
-        || mesh.is_valid("mloopuv") != Validness::Valid
-        || mesh.is_valid("mvert") != Validness::Valid
+// This is only valid for meshes with triangular faces
+fn instance_to_mesh(mesh: Instance) -> Option<Mesh> {
+    if !mesh.is_valid("mpoly")
+        || !mesh.is_valid("mloop")
+        || !mesh.is_valid("mloopuv")
+        || !mesh.is_valid("mvert")
     {
-        panic!("Object mesh data is invalid");
+        return None;
     }
 
     let faces = mesh.get_iter("mpoly").collect::<Vec<_>>();
@@ -71,7 +72,7 @@ fn instance_to_mesh(mesh: Instance) -> Mesh {
                 verts_array_buff[index_count * 3 + 1] = co[1];
                 verts_array_buff[index_count * 3 + 2] = co[2];
 
-                //get normals, which are 16byte ints, and norm them back into floats.
+                //Normals are compressed into 16 bit integers
                 let no = vert.get_i16_vec("no");
                 normal_buffer[index_count * 3] = f32::from(no[0]) / 32767.0;
                 normal_buffer[index_count * 3 + 1] = f32::from(no[1]) / 32767.0;
@@ -108,36 +109,36 @@ fn instance_to_mesh(mesh: Instance) -> Mesh {
 
     let faces: Vec<_> = faces.chunks(3).map(|f| [f[0], f[1], f[2]]).collect();
 
-    Mesh { faces }
+    Some(Mesh { faces })
 }
 
-fn main() -> Result<(), io::Error> {
+fn main() {
     let base_path = path::PathBuf::from(
         env::var_os("CARGO_MANIFEST_DIR").expect("could not find cargo manifest dir"),
     );
-    let blend_path = base_path.join("examples/blend_files/snake_cubes.blend");
+    let blend_path = base_path.join("examples/blend_files/2_80.blend");
     let blend = Blend::from_path(blend_path);
 
     let mut objects = Vec::new();
 
     for obj in blend.get_by_code(*b"OB") {
-        if obj.is_valid("data").into() && obj.get("data").code()[0..=1] == *b"ME" {
+        if obj.is_valid("data") && obj.get("data").code()[0..=1] == *b"ME" {
             let loc = obj.get_f32_vec("loc");
             let rot = obj.get_f32_vec("rot");
             let size = obj.get_f32_vec("size");
             let data = obj.get("data");
 
-            objects.push(Object {
-                name: obj.get("id").get_string("name"),
-                location: [loc[0], loc[1], loc[2]],
-                rotation: [rot[0], rot[1], rot[2]],
-                scale: [size[0], size[1], size[2]],
-                mesh: instance_to_mesh(data),
-            });
+            if let Some(mesh) = instance_to_mesh(data) {
+                objects.push(Object {
+                    name: obj.get("id").get_string("name"),
+                    location: [loc[0], loc[1], loc[2]],
+                    rotation: [rot[0], rot[1], rot[2]],
+                    scale: [size[0], size[1], size[2]],
+                    mesh,
+                });
+            }
         }
     }
 
     println!("{:#?}", objects);
-
-    Ok(())
 }
