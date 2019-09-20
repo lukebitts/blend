@@ -1,6 +1,6 @@
 # Blend - A crate for parsing .blend files from Blender
 
-[Documentation](https://docs.rs/blend/0.6.0/blend/)
+[Documentation](https://docs.rs/blend/latest/blend/)
 
 ## Example
 
