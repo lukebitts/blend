@@ -10,6 +10,7 @@ documentation = "https://docs.rs/blend/"
 repository = "https://github.com/lukebitts/blend"
 categories = ["parser-implementations"]
 keywords = ["blend", "blender"]
+readme = "README.md"
 
 [dependencies]
 nom = "5.0.0"
