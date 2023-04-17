@@ -13,7 +13,7 @@ keywords = ["blend", "blender"]
 readme = "README.md"
 
 [dependencies]
-nom = "5.0.0"
+nom = "7.1.3"
 linked-hash-map = "0.5.2"
 
 [dev-dependencies]

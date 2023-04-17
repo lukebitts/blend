@@ -41,6 +41,7 @@ impl From<NomEndianness> for Endianness {
         match e {
             NomEndianness::Little => Endianness::Little,
             NomEndianness::Big => Endianness::Big,
+            _ => panic!(),
         }
     }
 }

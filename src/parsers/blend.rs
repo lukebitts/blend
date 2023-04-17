@@ -106,7 +106,7 @@ pub fn version(input: &[u8]) -> Result<[u8; 3]> {
 }
 
 pub fn header(input: &[u8]) -> Result<Header> {
-    let (input, _) = match tag::<'_, _, _, BlendParseError>("BLENDER")(input) {
+    let (input, _) = match tag::<_, _, BlendParseError>("BLENDER")(input) {
         Ok(v) => v,
         Err(_) => {
             return Err(nom::Err::Failure(
@@ -166,15 +166,11 @@ impl RawBlend {
     }
 }
 
+#[derive(Default)]
 pub enum BlendParseContext {
+    #[default]
     Empty,
     ParsedHeader(Header),
-}
-
-impl Default for BlendParseContext {
-    fn default() -> Self {
-        BlendParseContext::Empty
-    }
 }
 
 impl BlendParseContext {
@@ -300,12 +296,9 @@ impl BlendParseContext {
 
         let (input, (mut blocks, _)) = many_till(move |d| self.block(d), tag("ENDB"))(input)?;
 
-        let dna = if let Some(dna) = blocks.pop() {
+        let dna = if let Some(Block::Dna(dna)) = blocks.pop() {
             // Assumption: The DNA block is always the last one
-            match dna {
-                Block::Dna(dna) => dna,
-                _ => return Err(Err::Failure(BlendParseError::NoDnaBlockFound)),
-            }
+            dna
         } else {
             return Err(Err::Failure(BlendParseError::NoDnaBlockFound));
         };

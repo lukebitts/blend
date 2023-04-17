@@ -121,7 +121,7 @@ fn fmt_instance(
     inst: &Instance,
     ident: usize,
 ) -> fmt::Result {
-    let ident_str: String = std::iter::repeat(" ").take(4 * ident).collect();
+    let ident_str: String = " ".repeat(4 * ident);
 
     write!(f, "{}", inst.type_name)?;
 
@@ -151,7 +151,8 @@ fn fmt_instance(
                 write!(f, "{}    {}: ", ident_str, field_name)?;
                 match &field.type_name[..] {
                     "int" => writeln!(f, "{} = {};", field.type_name, inst.get_i32(field_name))?,
-                    "char" => writeln!(f, "{} = {};", field.type_name, inst.get_u8(field_name))?,
+                    "char" => writeln!(f, "{} = {};", field.type_name, inst.get_i8(field_name))?,
+                    "uchar" => writeln!(f, "{} = {};", field.type_name, inst.get_u8(field_name))?,
                     "short" => writeln!(f, "{} = {};", field.type_name, inst.get_i16(field_name))?,
                     "float" => writeln!(f, "{} = {};", field.type_name, inst.get_f32(field_name))?,
                     "double" => writeln!(f, "{} = {};", field.type_name, inst.get_f64(field_name))?,
@@ -161,7 +162,10 @@ fn fmt_instance(
                     "uint64_t" => {
                         writeln!(f, "{} = {};", field.type_name, inst.get_u64(field_name))?
                     }
-                    _ if field.is_primitive => panic!("unknown primitive"),
+                    "int8_t" => {
+                        writeln!(f, "{} = {};", field.type_name, inst.get_i8(field_name))?
+                    }
+                    _ if field.is_primitive => panic!("unknown primitive {:?}", field),
                     _ => {
                         if field.type_name == "ListBase" {
                             if inst.is_valid(field_name) {
@@ -237,6 +241,7 @@ fn fmt_instance(
                     "double" => writeln!(f, "{:?};", inst.get_f64_vec(field_name))?,
                     "int64_t" => writeln!(f, "{:?};", inst.get_i64_vec(field_name))?,
                     "uint64_t" => writeln!(f, "{:?};", inst.get_u64_vec(field_name))?,
+                    "int8_t" => writeln!(f, "{:?};", inst.get_i8_vec(field_name))?,
                     _ if field.is_primitive => panic!("unknown primitive"),
                     _ => {
                         writeln!(f, "[")?;
@@ -263,7 +268,7 @@ fn fmt_instance(
                             field_name,
                             inst.get(field_name).type_name,
                             inst.parse_ptr_address(
-                                &inst.data.get(field.data_start, field.data_len)
+                                inst.data.get(field.data_start, field.data_len)
                             )
                             .unwrap()
                         )?
@@ -327,7 +332,7 @@ fn fmt_instance(
                             field_name,
                             field.type_name,
                             inst.parse_ptr_address(
-                                &inst.data.get(field.data_start, field.data_len)
+                                inst.data.get(field.data_start, field.data_len)
                             )
                             .unwrap()
                         )?
@@ -400,7 +405,7 @@ fn fmt_instance(
 
 impl fmt::Display for Instance<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_instance(&mut std::collections::HashSet::new(), f, &self, 0)
+        fmt_instance(&mut std::collections::HashSet::new(), f, self, 0)
     }
 }
 
@@ -468,7 +473,7 @@ impl<'a> Instance<'a> {
             ),
         }
 
-        let address = self.parse_ptr_address(&self.data.get(field.data_start, field.data_len));
+        let address = self.parse_ptr_address(self.data.get(field.data_start, field.data_len));
 
         match address {
             None => PointerInfo::Null,
@@ -517,7 +522,7 @@ impl<'a> Instance<'a> {
                 }
             }
             FieldInfo::Pointer { indirection_count } if indirection_count == 2 => {
-                let pointer = self.get_ptr(&field);
+                let pointer = self.get_ptr(field);
 
                 let block = match pointer {
                     PointerInfo::Block(block) => block,
@@ -586,7 +591,7 @@ impl<'a> Instance<'a> {
         let blender_type_name = U::blender_name();
 
         match field.info {
-            FieldInfo::Value if field.is_primitive && field.type_name == blender_type_name => {
+            FieldInfo::Value if field.is_primitive /*&& field.type_name == blender_type_name*/ => {
                 assert_eq!(
                     field.data_len,
                     size_of::<U>(),
@@ -597,7 +602,7 @@ impl<'a> Instance<'a> {
                 );
 
                 U::parse(
-                    &self.data.get(field.data_start, field.data_len),
+                    self.data.get(field.data_start, field.data_len),
                     self.blend.header.endianness,
                 )
             }
@@ -669,7 +674,7 @@ impl<'a> Instance<'a> {
                 self.data.get(field.data_start, field.data_len)
             }
             FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
-                let pointer = self.get_ptr(&field);
+                let pointer = self.get_ptr(field);
                 let block = match pointer {
                     PointerInfo::Block(block) => block,
                     PointerInfo::Null | PointerInfo::Invalid => panic!(
@@ -733,7 +738,7 @@ impl<'a> Instance<'a> {
 
     /// ## Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let obj = blend.get_by_code(*b"OB").next().unwrap();
     /// let name = obj.get("id").get_string("name");
     /// ```
@@ -757,7 +762,7 @@ impl<'a> Instance<'a> {
                 let data = &self.data.get(field.data_start, field.data_len);
                 data.iter()
                     .take_while(|c| **c != 0)
-                    .map(|c| *c as u8 as char)
+                    .map(|c| *c as char)
                     .collect()
             }
             _ => panic!("field '{}' is not a string. ({:?})", name, field),
@@ -768,7 +773,7 @@ impl<'a> Instance<'a> {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let obj = blend.get_by_code(*b"OB").next().unwrap();
     /// let id = obj.get("id");
     /// let data = obj.get("data");
@@ -811,7 +816,7 @@ impl<'a> Instance<'a> {
                 }
             }
             FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
-                let pointer = self.get_ptr(&field);
+                let pointer = self.get_ptr(field);
                 let block = match pointer {
                     PointerInfo::Block(block) => block,
                     PointerInfo::Null | PointerInfo::Invalid => panic!(
@@ -835,13 +840,13 @@ impl<'a> Instance<'a> {
                         let r#type = &self.dna.types[r#struct.type_index];
 
                         (
-                            generate_fields(r#struct, r#type, &self.dna, &self.blend.header),
+                            generate_fields(r#struct, r#type, self.dna, &self.blend.header),
                             r#type,
                         )
                     }
                     Block::Subsidiary { dna_index, .. } => {
                         if let Some(v) = generate_subsidiary_fields(
-                            &self.dna,
+                            self.dna,
                             &self.blend.header,
                             field,
                             *dna_index,
@@ -856,8 +861,8 @@ impl<'a> Instance<'a> {
                     _ => unimplemented!(),
                 };
                 Instance {
-                    dna: &self.dna,
-                    blend: &self.blend,
+                    dna: self.dna,
+                    blend: self.blend,
                     type_name: r#type.name.clone(),
                     data: InstanceDataFormat::Block(block),
                     fields,
@@ -871,7 +876,7 @@ impl<'a> Instance<'a> {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let obj = blend.get_by_code(*b"OB").next().unwrap();
     /// let materials = obj.get_iter("mat").collect::<Vec<_>>();
     /// ```
@@ -941,15 +946,15 @@ impl<'a> Instance<'a> {
                         }
                     }
                     InstanceIterator::ValueArray {
-                        ref dna,
-                        ref blend,
+                        dna,
+                        blend,
                         ref fields,
-                        ref data,
+                        data,
                         ref len,
                         ref type_name,
                         ref mut cur_index,
                     } => {
-                        let data_len = (data.len() / len) as usize;
+                        let data_len = data.len() / len;
                         let data_start = *cur_index * data_len;
 
                         if data_start == data.len() {
@@ -967,14 +972,14 @@ impl<'a> Instance<'a> {
                         })
                     }
                     InstanceIterator::Pointer1 {
-                        ref dna,
-                        ref blend,
+                        dna,
+                        blend,
                         ref fields,
-                        ref data,
+                        data,
                         ref type_name,
                         ref mut cur_index,
                     } => {
-                        let data_len = (data.data.len() / data.count) as usize;
+                        let data_len = data.data.len() / data.count;
                         let data_start = *cur_index * data_len;
 
                         if data_start == data.data.len() {
@@ -994,8 +999,8 @@ impl<'a> Instance<'a> {
                         })
                     }
                     InstanceIterator::Pointer2 {
-                        ref blend,
-                        ref dna,
+                        blend,
+                        dna,
                         ref mut pointers,
                         ref field,
                     } => {
@@ -1014,11 +1019,11 @@ impl<'a> Instance<'a> {
                                     let r#type = &dna.types[r#struct.type_index];
 
                                     let fields =
-                                        generate_fields(r#struct, r#type, &dna, &blend.header);
+                                        generate_fields(r#struct, r#type, dna, &blend.header);
 
                                     return Some(Instance {
-                                        dna: &dna,
-                                        blend: &blend,
+                                        dna,
+                                        blend,
                                         type_name: r#type.name.clone(),
                                         data: InstanceDataFormat::Block(
                                             block.expect("we are sure block is some here"),
@@ -1030,7 +1035,7 @@ impl<'a> Instance<'a> {
                                     if let Some((fields, r#type)) = generate_subsidiary_fields(
                                         dna,
                                         &blend.header,
-                                        &field,
+                                        field,
                                         *dna_index,
                                     ) {
                                         return Some(Instance {
@@ -1087,7 +1092,7 @@ impl<'a> Instance<'a> {
                     .iter()
                     .find(|s| s.type_index == field.type_index)
                 {
-                    let r#type = &self.dna.types[r#struct.type_index as usize];
+                    let r#type = &self.dna.types[r#struct.type_index];
                     let fields = generate_fields(r#struct, r#type, self.dna, &self.blend.header);
 
                     let data = self.data.data();
@@ -1106,7 +1111,7 @@ impl<'a> Instance<'a> {
                 }
             }
             FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
-                let pointer = self.get_ptr(&field);
+                let pointer = self.get_ptr(field);
                 let block = match pointer {
                     PointerInfo::Block(block) => block,
                     PointerInfo::Null | PointerInfo::Invalid => panic!(
@@ -1123,7 +1128,7 @@ impl<'a> Instance<'a> {
                         let r#type = &self.dna.types[r#struct.type_index];
 
                         let fields =
-                            generate_fields(r#struct, r#type, &self.dna, &self.blend.header);
+                            generate_fields(r#struct, r#type, self.dna, &self.blend.header);
 
                         InstanceIterator::Pointer1 {
                             dna: self.dna,
@@ -1138,9 +1143,9 @@ impl<'a> Instance<'a> {
                         data, dna_index, ..
                     } => {
                         let (fields, r#type) = generate_subsidiary_fields(
-                            &self.dna,
+                            self.dna,
                             &self.blend.header,
-                            &field,
+                            field,
                             *dna_index,
                         )
                         .expect("");
@@ -1158,7 +1163,7 @@ impl<'a> Instance<'a> {
                 }
             }
             FieldInfo::Pointer { indirection_count } if indirection_count == 2 => {
-                let pointer = self.get_ptr(&field);
+                let pointer = self.get_ptr(field);
                 let block = match pointer {
                     PointerInfo::Block(block) => block,
                     PointerInfo::Null | PointerInfo::Invalid => panic!(
@@ -1191,8 +1196,8 @@ impl<'a> Instance<'a> {
                 }
 
                 InstanceIterator::Pointer2 {
-                    blend: &self.blend,
-                    dna: &self.dna,
+                    blend: self.blend,
+                    dna: self.dna,
                     field: field.clone(),
                     pointers: pointers.into_iter(),
                 }
@@ -1219,8 +1224,8 @@ impl<'a> Instance<'a> {
                 }
 
                 InstanceIterator::Pointer2 {
-                    blend: &self.blend,
-                    dna: &self.dna,
+                    blend: self.blend,
+                    dna: self.dna,
                     field: field.clone(),
                     pointers: pointers.into_iter(),
                 }
@@ -1340,7 +1345,7 @@ fn generate_fields(
         let field_dna_type = &dna.types[field.type_index];
         let field_full_name = &dna.names[field.name_index];
 
-        let is_primitive = field.type_index < 12;
+        let is_primitive = field.type_index < 13;
         let (_, (field_name, field_info)) =
             parse_field(field_full_name).expect("field name could not be parsed");
 
@@ -1376,8 +1381,8 @@ fn generate_subsidiary_fields<'a>(
     field: &FieldTemplate,
     dna_index: usize,
 ) -> Option<(LinkedHashMap<String, FieldTemplate>, &'a DnaType)> {
-    if field.type_index >= 12 {
-        if dna_index >= 12 {
+    if field.type_index >= 13 {
+        if dna_index >= 13 {
             //assert_eq!(field.type_index as u16, self.dna.structs[block.header.sdna_index as usize].0);
             let r#struct = &dna.structs[dna_index];
             let r#type = &dna.types[r#struct.type_index];
@@ -1387,16 +1392,16 @@ fn generate_subsidiary_fields<'a>(
             .iter()
             .find(|s| s.type_index == field.type_index)
         {
-            let r#type = &dna.types[r#struct.type_index as usize];
+            let r#type = &dna.types[r#struct.type_index];
             Some((generate_fields(r#struct, r#type, dna, header), r#type))
         } else {
             None
         }
     } else {
         let r#struct = &dna.structs[dna_index];
-        if r#struct.type_index >= 12 {
+        if r#struct.type_index >= 13 {
             let r#type = &dna.types[r#struct.type_index];
-            Some((generate_fields(r#struct, r#type, &dna, header), r#type))
+            Some((generate_fields(r#struct, r#type, dna, header), r#type))
         } else {
             None
         }

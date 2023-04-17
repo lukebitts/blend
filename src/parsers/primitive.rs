@@ -32,7 +32,7 @@ impl BlendPrimitive for u8 {
         parse_u8(data, endianness)
     }
     fn blender_name() -> &'static str {
-        "char"
+        "uchar"
     }
 }
 
@@ -101,76 +101,76 @@ impl BlendPrimitive for i64 {
 
 pub fn parse_i8(slice: &[u8], endianness: Endianness) -> i8 {
     let (_, val) = match endianness {
-        Endianness::Little => le_i8::<()>(slice).expect("parse i8"),
-        Endianness::Big => be_i8::<()>(slice).expect("parse i8"),
+        Endianness::Little => le_i8::<_, ()>(slice).expect("parse i8"),
+        Endianness::Big => be_i8::<_, ()>(slice).expect("parse i8"),
     };
     val
 }
 
 pub fn parse_u8(slice: &[u8], _endianness: Endianness) -> u8 {
-    *slice.get(0).expect("parse u8")
+    *slice.first().expect("parse u8")
 }
 
 pub fn parse_u16(slice: &[u8], endianness: Endianness) -> u16 {
     let (_, val) = match endianness {
-        Endianness::Little => le_u16::<()>(slice).expect("parse u16"),
-        Endianness::Big => be_u16::<()>(slice).expect("parse u16"),
+        Endianness::Little => le_u16::<_, ()>(slice).expect("parse u16"),
+        Endianness::Big => be_u16::<_, ()>(slice).expect("parse u16"),
     };
     val
 }
 
 pub fn parse_i16(slice: &[u8], endianness: Endianness) -> i16 {
     let (_, val) = match endianness {
-        Endianness::Little => le_i16::<()>(slice).expect("parse i16"),
-        Endianness::Big => be_i16::<()>(slice).expect("parse i16"),
+        Endianness::Little => le_i16::<_, ()>(slice).expect("parse i16"),
+        Endianness::Big => be_i16::<_, ()>(slice).expect("parse i16"),
     };
     val
 }
 
 pub fn parse_i32(slice: &[u8], endianness: Endianness) -> i32 {
     let (_, val) = match endianness {
-        Endianness::Little => le_i32::<()>(slice).expect("parse i32"),
-        Endianness::Big => be_i32::<()>(slice).expect("parse i32"),
+        Endianness::Little => le_i32::<_, ()>(slice).expect("parse i32"),
+        Endianness::Big => be_i32::<_, ()>(slice).expect("parse i32"),
     };
     val
 }
 
 pub fn parse_f32(slice: &[u8], endianness: Endianness) -> f32 {
     let (_, val) = match endianness {
-        Endianness::Little => le_f32::<()>(slice).expect("parse f32"),
-        Endianness::Big => be_f32::<()>(slice).expect("parse f32"),
+        Endianness::Little => le_f32::<_, ()>(slice).expect("parse f32"),
+        Endianness::Big => be_f32::<_, ()>(slice).expect("parse f32"),
     };
     val
 }
 
 pub fn parse_f64(slice: &[u8], endianness: Endianness) -> f64 {
     let (_, val) = match endianness {
-        Endianness::Little => le_f64::<()>(slice).expect("parse f64"),
-        Endianness::Big => be_f64::<()>(slice).expect("parse f64"),
+        Endianness::Little => le_f64::<_, ()>(slice).expect("parse f64"),
+        Endianness::Big => be_f64::<_, ()>(slice).expect("parse f64"),
     };
     val
 }
 
 pub fn parse_u32(slice: &[u8], endianness: Endianness) -> u32 {
     let (_, val) = match endianness {
-        Endianness::Little => le_u32::<()>(slice).expect("parse u32"),
-        Endianness::Big => be_u32::<()>(slice).expect("parse u32"),
+        Endianness::Little => le_u32::<_, ()>(slice).expect("parse u32"),
+        Endianness::Big => be_u32::<_, ()>(slice).expect("parse u32"),
     };
     val
 }
 
 pub fn parse_i64(slice: &[u8], endianness: Endianness) -> i64 {
     let (_, val) = match endianness {
-        Endianness::Little => le_i64::<()>(slice).expect("parse i64"),
-        Endianness::Big => be_i64::<()>(slice).expect("parse i64"),
+        Endianness::Little => le_i64::<_, ()>(slice).expect("parse i64"),
+        Endianness::Big => be_i64::<_, ()>(slice).expect("parse i64"),
     };
     val
 }
 
 pub fn parse_u64(slice: &[u8], endianness: Endianness) -> u64 {
     let (_, val) = match endianness {
-        Endianness::Little => le_u64::<()>(slice).expect("parse u64"),
-        Endianness::Big => be_u64::<()>(slice).expect("parse u64"),
+        Endianness::Little => le_u64::<_, ()>(slice).expect("parse u64"),
+        Endianness::Big => be_u64::<_, ()>(slice).expect("parse u64"),
     };
     val
 }

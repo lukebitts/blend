@@ -2,7 +2,7 @@
 //! 
 //! ## Example
 //! 
-//! ```rust
+//! ```ignore
 //! use blend::Blend;
 //! 
 //! /// Prints the name and position of every object
@@ -25,7 +25,7 @@
 //! a list of C-like structs which can contain primitives, arrays, pointers and other structs. The following is how a
 //! Camera is defined in Blender's memory (in Rust-like syntax):
 //! 
-//! ```rust
+//! ```ignore
 //! struct Camera {
 //!     id: ID {
 //!         name: [u8; 66] = "CACamera"

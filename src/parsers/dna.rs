@@ -36,14 +36,14 @@ pub struct DnaStruct {
 #[derive(Debug)]
 pub struct DnaParseContext {
     endianness: Endianness,
-    pointer_size: PointerSize,
+    _pointer_size: PointerSize,
 }
 
 impl DnaParseContext {
     pub fn new(endianness: Endianness, pointer_size: PointerSize) -> Self {
         Self {
             endianness,
-            pointer_size,
+            _pointer_size: pointer_size,
         }
     }
 
@@ -151,7 +151,7 @@ impl DnaParseContext {
     }
 
     /// Panics if a u32 can't be converted to usize in your system.
-    fn structs<'a, 'b>(&'a self, input: &'b [u8]) -> Result<'b, Vec<DnaStruct>> {
+    fn structs<'b>(&self, input: &'b [u8]) -> Result<'b, Vec<DnaStruct>> {
         let (input, _) = tag("STRC")(input)?;
         let (input, structs_len) = match self.endianness {
             Endianness::Little => le_u32(input)?,
