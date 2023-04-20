@@ -6,16 +6,16 @@ type Face = [Vertex; 3];
 
 #[derive(Debug)]
 struct Mesh {
-    faces: Vec<Face>,
+    _faces: Vec<Face>,
 }
 
 #[derive(Debug)]
 struct Object {
-    name: String,
-    location: [f32; 3],
-    rotation: [f32; 3],
-    scale: [f32; 3],
-    mesh: Mesh,
+    _name: String,
+    _location: [f32; 3],
+    _rotation: [f32; 3],
+    _scale: [f32; 3],
+    _mesh: Mesh,
 }
 
 // This is only valid for meshes with triangular faces
@@ -109,7 +109,7 @@ fn instance_to_mesh(mesh: Instance) -> Option<Mesh> {
 
     let faces: Vec<_> = faces.chunks(3).map(|f| [f[0], f[1], f[2]]).collect();
 
-    Some(Mesh { faces })
+    Some(Mesh { _faces: faces })
 }
 
 fn main() {
@@ -117,11 +117,11 @@ fn main() {
         env::var_os("CARGO_MANIFEST_DIR").expect("could not find cargo manifest dir"),
     );
     let blend_path = base_path.join("examples/blend_files/2_80.blend");
-    let blend = Blend::from_path(blend_path);
+    let blend = Blend::from_path(blend_path).expect("error loading blend file");
 
     let mut objects = Vec::new();
 
-    for obj in blend.get_by_code(*b"OB") {
+    for obj in blend.instances_with_code(*b"OB") {
         if obj.is_valid("data") && obj.get("data").code()[0..=1] == *b"ME" {
             let loc = obj.get_f32_vec("loc");
             let rot = obj.get_f32_vec("rot");
@@ -130,11 +130,11 @@ fn main() {
 
             if let Some(mesh) = instance_to_mesh(data) {
                 objects.push(Object {
-                    name: obj.get("id").get_string("name"),
-                    location: [loc[0], loc[1], loc[2]],
-                    rotation: [rot[0], rot[1], rot[2]],
-                    scale: [size[0], size[1], size[2]],
-                    mesh,
+                    _name: obj.get("id").get_string("name"),
+                    _location: [loc[0], loc[1], loc[2]],
+                    _rotation: [rot[0], rot[1], rot[2]],
+                    _scale: [size[0], size[1], size[2]],
+                    _mesh: mesh,
                 });
             }
         }

@@ -1,5 +1,3 @@
-examples/blend_files/**
-examples/print_blend/output_production/**
 examples/print_blend/*.txt
 
 ### Rust ###

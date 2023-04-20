@@ -3,7 +3,7 @@ use crate::parsers::{
     dna::{Dna, DnaStruct, DnaType},
     field::{parse_field, FieldInfo},
     primitive::*,
-    Endianness, PointerSize,
+    BlendParseError, Endianness, PointerSize,
 };
 use linked_hash_map::LinkedHashMap;
 use std::fmt;
@@ -11,7 +11,7 @@ use std::{io::Read, mem::size_of, num::NonZeroU64, path::Path};
 
 /// An `Instance`'s data can be a reference to a `Block` if the `Instance` represents a root or subsidiary block,
 /// or it can be raw bytes if the `Instance` was created by accessing a field in another `Instance`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum InstanceDataFormat<'a> {
     Block(&'a Block),
     Raw(&'a [u8]),
@@ -150,21 +150,19 @@ fn fmt_instance(
             FieldInfo::Value => {
                 write!(f, "{}    {}: ", ident_str, field_name)?;
                 match &field.type_name[..] {
-                    "int" => writeln!(f, "{} = {};", field.type_name, inst.get_i32(field_name))?,
                     "char" => writeln!(f, "{} = {};", field.type_name, inst.get_i8(field_name))?,
                     "uchar" => writeln!(f, "{} = {};", field.type_name, inst.get_u8(field_name))?,
                     "short" => writeln!(f, "{} = {};", field.type_name, inst.get_i16(field_name))?,
+                    "ushort" => writeln!(f, "{} = {};", field.type_name, inst.get_u16(field_name))?,
+                    "int" => writeln!(f, "{} = {};", field.type_name, inst.get_i32(field_name))?,
+                    "long" => writeln!(f, "{} = {};", field.type_name, inst.get_i32(field_name))?,
+                    "ulong" => writeln!(f, "{} = {};", field.type_name, inst.get_u32(field_name))?,
                     "float" => writeln!(f, "{} = {};", field.type_name, inst.get_f32(field_name))?,
                     "double" => writeln!(f, "{} = {};", field.type_name, inst.get_f64(field_name))?,
-                    "int64_t" => {
-                        writeln!(f, "{} = {};", field.type_name, inst.get_i64(field_name))?
-                    }
-                    "uint64_t" => {
-                        writeln!(f, "{} = {};", field.type_name, inst.get_u64(field_name))?
-                    }
-                    "int8_t" => {
-                        writeln!(f, "{} = {};", field.type_name, inst.get_i8(field_name))?
-                    }
+                    "int64_t" => writeln!(f, "{} = {};", field.type_name, inst.get_i64(field_name))?,
+                    "uint64_t" => writeln!(f, "{} = {};", field.type_name, inst.get_u64(field_name))?,
+                    "void" =>  writeln!(f, "{} = ();", field.type_name)?,
+                    "int8_t" => writeln!(f, "{} = {};", field.type_name, inst.get_i8(field_name))?,
                     _ if field.is_primitive => panic!("unknown primitive {:?}", field),
                     _ => {
                         if field.type_name == "ListBase" {
@@ -173,7 +171,7 @@ fn fmt_instance(
                                     .get_iter(field_name)
                                     .next()
                                     .expect("a valid ListBase always has at least one element");
-                                writeln!(f, "ListBase<{}>[#?] = [", list_base_instance.type_name)?;
+                                writeln!(f, "ListBase<{}>[?] = [", list_base_instance.type_name)?;
                                 if list_base_instance.data.code().is_none() {
                                     if !seen_addresses
                                         .contains(&list_base_instance.memory_address())
@@ -196,19 +194,10 @@ fn fmt_instance(
                                     }
                                 } else {
                                     unimplemented!()
-                                    /*write!(
-                                        f,
-                                        "{}",
-                                        list_base_instances
-                                            .iter()
-                                            .map(|i| format!("{}", i.memory_address()))
-                                            .collect::<Vec<_>>()
-                                            .join(", ")
-                                    )?;*/
                                 }
                                 writeln!(f, "{}    ];", ident_str)?;
                             } else {
-                                writeln!(f, "ListBase<?>[] = null;")?;
+                                writeln!(f, "ListBase<unknown>[] = null;")?;
                             }
                         } else {
                             fmt_instance(seen_addresses, f, &inst.get(field_name), ident + 1)?;
@@ -235,13 +224,18 @@ fn fmt_instance(
                             writeln!(f, "{:?};", inst.get_u8_vec(field_name))?;
                         }
                     }
-                    "int" => writeln!(f, "{:?};", inst.get_i32_vec(field_name))?,
+                    "uchar" => writeln!(f, "{:?};", inst.get_u8_vec(field_name))?,
                     "short" => writeln!(f, "{:?};", inst.get_i16_vec(field_name))?,
+                    "ushort" => writeln!(f, "{:?};", inst.get_u16_vec(field_name))?,
+                    "int" => writeln!(f, "{:?};", inst.get_i32_vec(field_name))?,
+                    "long" => writeln!(f, "{:?};", inst.get_i32_vec(field_name))?,
+                    "ulong" => writeln!(f, "{:?};", inst.get_u32_vec(field_name))?,
                     "float" => writeln!(f, "{:?};", inst.get_f32_vec(field_name))?,
                     "double" => writeln!(f, "{:?};", inst.get_f64_vec(field_name))?,
                     "int64_t" => writeln!(f, "{:?};", inst.get_i64_vec(field_name))?,
-                    "uint64_t" => writeln!(f, "{:?};", inst.get_u64_vec(field_name))?,
+                    "void" => writeln!(f, "void;")?,
                     "int8_t" => writeln!(f, "{:?};", inst.get_i8_vec(field_name))?,
+                    "uint64_t" => writeln!(f, "{:?};", inst.get_u64_vec(field_name))?,
                     _ if field.is_primitive => panic!("unknown primitive"),
                     _ => {
                         writeln!(f, "[")?;
@@ -267,10 +261,8 @@ fn fmt_instance(
                             ident_str,
                             field_name,
                             inst.get(field_name).type_name,
-                            inst.parse_ptr_address(
-                                inst.data.get(field.data_start, field.data_len)
-                            )
-                            .unwrap()
+                            inst.parse_ptr_address(inst.data.get(field.data_start, field.data_len))
+                                .unwrap()
                         )?
                     } else {
                         writeln!(
@@ -279,63 +271,135 @@ fn fmt_instance(
                             ident_str, field_name, field.type_name
                         )?
                     }
-                //} else if inst.is_valid(field_name) {
                 } else if inst.is_valid(field_name) {
-                    //let ptr_field = &inst.fields[field_name];
-                    let ptr_inst = inst.get(field_name);
-                    //assert!(!seen_addresses.contains(&ptr_inst.memory_address()));
-                    if ptr_inst.data.code().is_none()
-                        && !seen_addresses.contains(&inst.get(field_name).memory_address())
-                    {
-                        if ptr_inst.type_name == "Link" {
-                            writeln!(
-                                f,
-                                "{}    {}: {}* = (not enough type information);",
-                                ident_str, field_name, field.type_name
-                            )?
-                        } else {
-                            seen_addresses.insert(ptr_inst.memory_address());
-                            match ptr_inst.data {
-                                InstanceDataFormat::Block(block) => match block {
-                                    Block::Principal { data, .. }
-                                    | Block::Subsidiary { data, .. } => {
-                                        if data.count > 1 {
-                                            writeln!(
-                                                f,
-                                                "{}    {}: {}[{}] = [",
-                                                ident_str, field_name, field.type_name, data.count
-                                            )?;
-                                            if let Some(p) = inst.get_iter(field_name).next() {
-                                                write!(f, "{}        ", ident_str)?;
-                                                fmt_instance(seen_addresses, f, &p, ident + 2)?;
-                                            }
-                                            writeln!(f, "{}    ];", ident_str)?;
-                                        } else {
-                                            write!(
-                                                f,
-                                                "{}    {}: {} = ",
-                                                ident_str, field_name, field.type_name
-                                            )?;
-                                            fmt_instance(seen_addresses, f, &ptr_inst, ident + 1)?;
-                                        }
-                                    }
-                                    _ => unimplemented!(),
-                                },
-                                _ => unimplemented!(),
+
+                    let mut has_non_primitive_data = true;
+
+                    match field.info {
+                        FieldInfo::Pointer { indirection_count } if indirection_count == 1 => {
+                            let pointer = inst.get_ptr(field);
+                            let block = match pointer {
+                                PointerInfo::Block(block) => block,
+                                PointerInfo::Null | PointerInfo::Invalid => panic!(
+                                    "field '{}' is null or doesn't point to a valid block. ({:?})",
+                                    field_name, field
+                                ),
+                            };
+
+                            if let Block::Subsidiary { dna_index, .. } = block {
+                                has_non_primitive_data = if field.type_index >= 13 {
+                                    dna_index >= &13 || inst
+                                        .dna()
+                                        .structs
+                                        .iter()
+                                        .any(|s| s.type_index == field.type_index)
+                                } else {
+                                    let r#struct = &inst.dna().structs[*dna_index];
+                                    r#struct.type_index >= 13
+                                };
                             }
                         }
-                    } else {
-                        writeln!(
-                            f,
-                            "{}    {}: {} = (@{});",
-                            ident_str,
-                            field_name,
-                            field.type_name,
-                            inst.parse_ptr_address(
-                                inst.data.get(field.data_start, field.data_len)
-                            )
-                            .unwrap()
-                        )?
+                        _ => (),
+                    }
+
+                    if has_non_primitive_data {
+                        let ptr_inst = inst.get(field_name);
+                        //assert!(!seen_addresses.contains(&ptr_inst.memory_address()));
+
+                        if ptr_inst.data.code().is_none()
+                            && !seen_addresses.contains(&ptr_inst.memory_address())
+                        {
+                            if ptr_inst.type_name == "Link" {
+                                match ptr_inst.data {
+                                    InstanceDataFormat::Block(block) => match block {
+                                        Block::Principal { data, .. }
+                                        | Block::Subsidiary { data, .. } => {
+                                            writeln!(
+                                                f,
+                                                "{}    {}: {}^ = {:?};",
+                                                ident_str, field_name, field.type_name, data.data
+                                            )?
+                                        }
+                                        _ => unimplemented!(),
+                                    }
+                                    _ => {
+                                        writeln!(
+                                            f,
+                                            "{}    {}: {}! = {:?};",
+                                            ident_str, field_name, field.type_name, ptr_inst
+                                        )?
+                                    }
+                                }
+                                
+                            } else {
+                                seen_addresses.insert(ptr_inst.memory_address());
+                                match ptr_inst.data {
+                                    InstanceDataFormat::Block(block) => match block {
+                                        Block::Principal { data, .. }
+                                        | Block::Subsidiary { data, .. } => {
+                                            if data.count > 1 {
+                                                writeln!(
+                                                    f,
+                                                    "{}    {}: {}[{}] = [",
+                                                    ident_str,
+                                                    field_name,
+                                                    field.type_name,
+                                                    data.count
+                                                )?;
+                                                if let Some(p) = inst.get_iter(field_name).next() {
+                                                    write!(f, "{}        ", ident_str)?;
+                                                    fmt_instance(seen_addresses, f, &p, ident + 2)?;
+                                                }
+                                                writeln!(f, "{}    ];", ident_str)?;
+                                            } else {
+                                                write!(
+                                                    f,
+                                                    "{}    {}: {} = ",
+                                                    ident_str, field_name, field.type_name
+                                                )?;
+                                                fmt_instance(
+                                                    seen_addresses,
+                                                    f,
+                                                    &ptr_inst,
+                                                    ident + 1,
+                                                )?;
+                                            }
+                                        }
+                                        _ => unimplemented!(),
+                                    },
+                                    _ => unimplemented!(),
+                                }
+                            }
+                        } else {
+                            writeln!(
+                                f,
+                                "{}    {}: {} = (@{});",
+                                ident_str,
+                                field_name,
+                                field.type_name,
+                                inst.parse_ptr_address(
+                                    inst.data.get(field.data_start, field.data_len)
+                                )
+                                .unwrap()
+                            )?
+                        }
+                    } else { // the type of this field cannot be determined, it's probably an array of primitives
+                        write!(f, "{}    {}: {}* = ", ident_str, field_name, field.type_name)?;
+                        let ptr_inst = inst.get_ptr(field);
+
+                        match ptr_inst {
+                            PointerInfo::Block(block) => {
+                                match block {
+                                    Block::Principal { data, .. }
+                                    | Block::Subsidiary { data, .. } => {
+                                        writeln!(f, "{:?};", data.data)?
+                                    }
+                                    _ => (),
+                                }
+                            },
+                            PointerInfo::Invalid => writeln!(f, "invalid;")?,
+                            PointerInfo::Null => writeln!(f, "null;")?,
+                        }
                     }
                 } else {
                     writeln!(
@@ -375,7 +439,7 @@ fn fmt_instance(
                 let mut instances = inst.get_iter(field_name);
                 writeln!(
                     f,
-                    "{}    {}: {}{:?}!? = $ [",
+                    "{}    {}: {}{:?} = [",
                     ident_str, field_name, field.type_name, dimensions,
                 )?;
 
@@ -423,6 +487,14 @@ fn parse_ptr_address(
 }
 
 impl<'a> Instance<'a> {
+    pub fn dna(&self) -> &Dna {
+        self.dna
+    }
+
+    pub fn raw(&self) -> &RawBlend {
+        self.blend
+    }
+
     /// If this `Instance` was created from a primary/root `Block` it will have a code. Possible codes include "OB" for
     /// objects, "ME" for meshes, "CA" for cameras, etc.
     /// # Panics
@@ -471,6 +543,10 @@ impl<'a> Instance<'a> {
                 "get_ptr can only be called for pointer fields. ({:?})",
                 field
             ),
+        }
+
+        if self.data.data().len() < field.data_start + field.data_len {
+            return PointerInfo::Invalid;
         }
 
         let address = self.parse_ptr_address(self.data.get(field.data_start, field.data_len));
@@ -637,6 +713,10 @@ impl<'a> Instance<'a> {
         self.get_value(name)
     }
 
+    pub fn get_u32<T: AsRef<str>>(&self, name: T) -> u32 {
+        self.get_value(name)
+    }
+
     pub fn get_f32<T: AsRef<str>>(&self, name: T) -> f32 {
         self.get_value(name)
     }
@@ -716,7 +796,15 @@ impl<'a> Instance<'a> {
         self.get_value_vec(name)
     }
 
+    pub fn get_u32_vec<T: AsRef<str>>(&self, name: T) -> Vec<u32> {
+        self.get_value_vec(name)
+    }
+
     pub fn get_i16_vec<T: AsRef<str>>(&self, name: T) -> Vec<i16> {
+        self.get_value_vec(name)
+    }
+
+    pub fn get_u16_vec<T: AsRef<str>>(&self, name: T) -> Vec<u16> {
         self.get_value_vec(name)
     }
 
@@ -738,9 +826,13 @@ impl<'a> Instance<'a> {
 
     /// ## Example
     ///
-    /// ```ignore
-    /// let obj = blend.get_by_code(*b"OB").next().unwrap();
+    /// ```rust
+    /// # use blend::Blend;
+    /// # fn main() {
+    ///     # let blend = Blend::from_path("examples/blend_files/3_5.blend").expect("error loading blend file");
+    /// let obj = blend.instances_with_code(*b"OB").next().unwrap();
     /// let name = obj.get("id").get_string("name");
+    /// # }
     /// ```
     ///
     /// ## Panics
@@ -773,10 +865,14 @@ impl<'a> Instance<'a> {
     ///
     /// ## Example
     ///
-    /// ```ignore
-    /// let obj = blend.get_by_code(*b"OB").next().unwrap();
+    /// ```rust
+    /// # use blend::Blend;
+    /// # fn main() {
+    ///     # let blend = Blend::from_path("examples/blend_files/3_5.blend").expect("error loading blend file");
+    /// let obj = blend.instances_with_code(*b"OB").next().expect("no object found");
     /// let id = obj.get("id");
     /// let data = obj.get("data");
+    /// # }
     /// ```
     ///
     /// ## Panics
@@ -853,9 +949,7 @@ impl<'a> Instance<'a> {
                         ) {
                             v
                         } else {
-                            println!("{:#?}", self);
-                            println!("{}: {:?}\n{:?}", name, block, field);
-                            panic!()
+                            panic!("field '{}' is a pointer to a list of primitives", name);
                         }
                     }
                     _ => unimplemented!(),
@@ -876,9 +970,13 @@ impl<'a> Instance<'a> {
     ///
     /// ## Example
     ///
-    /// ```ignore
-    /// let obj = blend.get_by_code(*b"OB").next().unwrap();
+    /// ```rust
+    /// # use blend::Blend;
+    /// # fn main() {
+    ///     # let blend = Blend::from_path("examples/blend_files/2_80.blend").expect("error loading blend file");
+    /// let obj = blend.instances_with_code(*b"OB").skip(1).next().unwrap();
     /// let materials = obj.get_iter("mat").collect::<Vec<_>>();
+    /// # }
     /// ```
     ///
     /// ## Panics
@@ -1242,23 +1340,21 @@ pub struct Blend {
 }
 
 impl Blend {
-    //todo: return io::Result
-    pub fn from_path<T: AsRef<Path>>(path: T) -> Blend {
+    pub fn from_path<T: AsRef<Path>>(path: T) -> Result<Blend, BlendParseError> {
         use std::{fs::File, io::Cursor};
 
         let mut file = File::open(path).expect("could not open .blend file");
 
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)
-            .expect("could not read .blend file");
+            .map_err(BlendParseError::IoError)?;
 
         Blend::new(Cursor::new(buffer))
     }
 
-    //todo: return result
-    pub fn new<T: Read>(data: T) -> Blend {
-        let blend = RawBlend::from_data(data).unwrap();
-        Self { blend }
+    pub fn new<T: Read>(data: T) -> Result<Blend, BlendParseError> {
+        let blend = RawBlend::from_data(data)?;
+        Ok(Self { blend })
     }
 
     /// A blend file is made of blocks of binary data which represent structs. These blocks can have pointers to other
@@ -1266,13 +1362,11 @@ impl Blend {
     /// have the correct type information in their headers, but their type is defined by the field that accesses them.
     /// You can only query for root blocks because subsidiary blocks have to be accessed through some field for their
     /// type to be known.
-    // todo: rename to root_blocks, return iterator
-    // todo: rename to root_instances?
-    pub fn get_all_root_blocks(&self) -> Vec<Instance> {
+    pub fn root_instances(&self) -> impl Iterator<Item = Instance> {
         self.blend
             .blocks
             .iter()
-            .filter_map(|block| match block {
+            .filter_map(move |block| match block {
                 Block::Principal { dna_index, .. } /*| Block::Global { dna_index, .. }*/ => {
                     let dna_struct = &self.blend.dna.structs[*dna_index];
                     let dna_type = &self.blend.dna.types[dna_struct.type_index];
@@ -1290,17 +1384,15 @@ impl Blend {
                 }
                 _ => None,
             })
-            .collect::<Vec<_>>()
     }
 
     /// Root blocks have a code that tells us their type, "OB" for object, "ME" for mesh, "MA" for material, etc.
     /// You can use this method to filter for a single type of block.
-    // todo: return iterator
-    pub fn get_by_code(&self, search_code: [u8; 2]) -> Vec<Instance> {
+    pub fn instances_with_code(&self, search_code: [u8; 2]) -> impl Iterator<Item = Instance> {
         self.blend
             .blocks
             .iter()
-            .filter_map(|block| match block {
+            .filter_map(move |block| match block {
                 Block::Principal {
                     data,
                     dna_index,
@@ -1328,7 +1420,6 @@ impl Blend {
                 }
                 _ => None,
             })
-            .collect::<Vec<_>>()
     }
 }
 

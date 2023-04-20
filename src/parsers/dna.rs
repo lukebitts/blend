@@ -47,7 +47,7 @@ impl DnaParseContext {
         }
     }
 
-    /// Panics if a u32 can't be converted to usize in your system.
+    /// Panics if a u32 can't be converted to usize.
     fn names<'a, 'b>(&'a self, input: &'b [u8]) -> Result<'b, Vec<String>>
     where
         'b: 'a,
@@ -83,7 +83,7 @@ impl DnaParseContext {
         Ok((input, names))
     }
 
-    /// Panics if a u32 can't be converted to usize in your system.
+    /// Panics if a u32 can't be converted to usize.
     fn types<'a, 'b>(&'a self, input: &'b [u8]) -> Result<'b, Vec<DnaType>>
     where
         'b: 'a,
@@ -150,7 +150,7 @@ impl DnaParseContext {
         ))
     }
 
-    /// Panics if a u32 can't be converted to usize in your system.
+    /// Panics if a u32 can't be converted to usize.
     fn structs<'b>(&self, input: &'b [u8]) -> Result<'b, Vec<DnaStruct>> {
         let (input, _) = tag("STRC")(input)?;
         let (input, structs_len) = match self.endianness {

@@ -63,6 +63,15 @@ impl BlendPrimitive for i32 {
     }
 }
 
+impl BlendPrimitive for u32 {
+    fn parse(data: &[u8], endianness: Endianness) -> Self {
+        parse_u32(data, endianness)
+    }
+    fn blender_name() -> &'static str {
+        "ulong"
+    }
+}
+
 impl BlendPrimitive for f32 {
     fn parse(data: &[u8], endianness: Endianness) -> Self {
         parse_f32(data, endianness)

@@ -2,20 +2,20 @@
 //! 
 //! ## Example
 //! 
-//! ```ignore
-//! use blend::Blend;
+//! ```rust
+//! # use blend::Blend;
 //! 
 //! /// Prints the name and position of every object
-//! fn main() {
-//!     let blend = Blend::from_path("file.blend");
+//! # fn main() {
+//!     let blend = Blend::from_path("examples/blend_files/3_5.blend").expect("error loading blend file");
 //! 
-//!     for obj in blend.get_by_code(*b"OB") {
+//!     for obj in blend.instances_with_code(*b"OB") {
 //!         let loc = obj.get_f32_vec("loc");
 //!         let name = obj.get("id").get_string("name");
 //! 
 //!         println!("\"{}\" at {:?}", name, loc);
 //!     }
-//! }
+//! # }
 //! ```
 //! 
 //! ## The .blend file
@@ -25,7 +25,7 @@
 //! a list of C-like structs which can contain primitives, arrays, pointers and other structs. The following is how a
 //! Camera is defined in Blender's memory (in Rust-like syntax):
 //! 
-//! ```ignore
+//! ```text
 //! struct Camera {
 //!     id: ID {
 //!         name: [u8; 66] = "CACamera"

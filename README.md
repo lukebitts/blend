@@ -9,9 +9,9 @@ use blend::Blend;
 
 /// Prints the name and position of every object
 fn main() {
-    let blend = Blend::from_path("file.blend");
+    let blend = Blend::from_path("examples/blend_files/3_5.blend").expect("error loading blend file");
 
-    for obj in blend.get_by_code(*b"OB") {
+    for obj in blend.instances_with_code(*b"OB") {
         let loc = obj.get_f32_vec("loc");
         let name = obj.get("id").get_string("name");
 
@@ -85,12 +85,6 @@ than the first are skipped. If you need to see the entire list simply access it 
 The `Display` implementation for `Instance` is a bit unpolished so larger .blend
 files might cause a stack overflow but that can be fixed by running the code in release mode. If you find something that
 breaks formatting please open an issue.
-
-### Running examples
-
-A .blend file may contain personal information from the machine it was created, that's why no .blend files are provided
-in this repository. To run the examples create a folder named `blend_files` inside the `examples` folder, put any file
-you want there and change the paths in the examples.
 
 ### Supported versions
 

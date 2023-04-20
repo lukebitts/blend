@@ -29,13 +29,13 @@ fn print_blend(file_name: impl AsRef<str>) -> Result<(), io::Error> {
         data = gzip_data;
     }
 
-    let blend = Blend::new(&data[..]);
+    let blend = Blend::new(&data[..]).expect("error loading blend file");
     let mut output_path_without_file = PathBuf::from(&output_path);
     output_path_without_file.pop();
     std::fs::create_dir_all(&output_path_without_file)?;
     let mut buffer = BufWriter::new(File::create(output_path)?);
 
-    for o in blend.get_all_root_blocks() {
+    for o in blend.root_instances() {
         write!(buffer, "{}", o)?;
     }
 
@@ -49,5 +49,8 @@ fn print_blend(file_name: impl AsRef<str>) -> Result<(), io::Error> {
 
 pub fn main() -> Result<(), io::Error> {
     print_blend("2_80.blend")?;
+    print_blend("2_90.blend")?;
+    print_blend("3_0.blend")?;
+    print_blend("3_5.blend")?;
     Ok(())
 }
